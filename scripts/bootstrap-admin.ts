@@ -1,7 +1,7 @@
-import dotenv from "dotenv";
+import { loadEnvFile } from "node:process";
 import { createClient } from "@supabase/supabase-js";
 
-dotenv.config({ path: ".env.local", quiet: true });
+loadEnvFile(".env.local");
 
 function readFlag(name: string) {
   const position = process.argv.indexOf(`--${name}`);

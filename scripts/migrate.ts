@@ -1,9 +1,9 @@
-import dotenv from "dotenv";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { loadEnvFile } from "node:process";
 import postgres from "postgres";
 
-dotenv.config({ path: ".env.local", quiet: true });
+loadEnvFile(".env.local");
 
 const configuredDatabaseUrl = process.env.DATABASE_URL;
 
