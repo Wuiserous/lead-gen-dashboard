@@ -23,6 +23,7 @@ import {
   Settings2,
   ShieldCheck,
   Target,
+  Trash2,
   Upload,
   UserPlus,
   Users,
@@ -108,6 +109,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [live, setLive] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [search, setSearch] = useState("");
+  const [teamFilter, setTeamFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [memberFilter, setMemberFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
@@ -211,6 +213,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
 
   const filteredAmbassadors = data.ambassadors.filter((ambassador) => {
     return (
+      (teamFilter === "all" || ambassador.team_id === teamFilter) &&
       (memberFilter === "all" || ambassador.sales_id === memberFilter) &&
       (groupFilter === "all" || ambassador.id === groupFilter)
     );
@@ -219,6 +222,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const filteredRegistrations = data.registrations.filter((lead) => {
     const needle = search.toLowerCase();
     return (
+      (teamFilter === "all" || lead.credited_team_id === teamFilter) &&
       (memberFilter === "all" || lead.credited_sales_id === memberFilter) &&
       (groupFilter === "all" || lead.ambassador_id === groupFilter) &&
       inDateRange(lead.created_at, dateRange) &&
@@ -334,10 +338,16 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               filters={
                 <ReportingFilters
                   data={data}
+                  teamFilter={teamFilter}
                   groupFilter={groupFilter}
                   memberFilter={memberFilter}
                   dateRange={dateRange}
                   onGroupChange={setGroupFilter}
+                  onTeamChange={(value) => {
+                    setTeamFilter(value);
+                    setMemberFilter("all");
+                    setGroupFilter("all");
+                  }}
                   onMemberChange={(value) => {
                     setMemberFilter(value);
                     setGroupFilter("all");
@@ -349,12 +359,24 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
             />
           )}
           {tab === "teams" && (
-            <TeamsView data={data} onRefresh={() => void load(true)} />
+            <TeamsView
+              data={data}
+              onViewTeam={(id) => {
+                setTeamFilter(id);
+                setMemberFilter("all");
+                setGroupFilter("all");
+                setDateRange("all");
+                setTab("overview");
+              }}
+              onRefresh={() => void load(true)}
+            />
           )}
           {tab === "employees" && (
             <EmployeesView
               data={data}
               onViewMember={(id) => {
+                const employee = data.employees.find((item) => item.id === id);
+                setTeamFilter(employee?.team_id ?? "all");
                 setMemberFilter(id);
                 setGroupFilter("all");
                 setTab("ambassadors");
@@ -369,10 +391,16 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               filters={
                 <ReportingFilters
                   data={data}
+                  teamFilter={teamFilter}
                   groupFilter={groupFilter}
                   memberFilter={memberFilter}
                   dateRange={dateRange}
                   onGroupChange={setGroupFilter}
+                  onTeamChange={(value) => {
+                    setTeamFilter(value);
+                    setMemberFilter("all");
+                    setGroupFilter("all");
+                  }}
                   onMemberChange={(value) => {
                     setMemberFilter(value);
                     setGroupFilter("all");
@@ -406,10 +434,16 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               </div>
               <ReportingFilters
                 data={data}
+                teamFilter={teamFilter}
                 groupFilter={groupFilter}
                 memberFilter={memberFilter}
                 dateRange={dateRange}
                 onGroupChange={setGroupFilter}
+                onTeamChange={(value) => {
+                  setTeamFilter(value);
+                  setMemberFilter("all");
+                  setGroupFilter("all");
+                }}
                 onMemberChange={(value) => {
                   setMemberFilter(value);
                   setGroupFilter("all");
@@ -419,6 +453,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               <LeadViewSummary registrations={filteredRegistrations} />
               <LeadsTable
                 registrations={filteredRegistrations}
+                canDelete={data.user.role !== "sales"}
                 onRefresh={() => void load(true)}
               />
             </section>
@@ -611,18 +646,22 @@ function Overview({
 
 function ReportingFilters({
   data,
+  teamFilter,
   groupFilter,
   memberFilter,
   dateRange,
+  onTeamChange,
   onGroupChange,
   onMemberChange,
   onDateRangeChange,
   hideDate = false,
 }: {
   data: DashboardData;
+  teamFilter: string;
   groupFilter: string;
   memberFilter: string;
   dateRange: DateRange;
+  onTeamChange: (value: string) => void;
   onGroupChange: (value: string) => void;
   onMemberChange: (value: string) => void;
   onDateRangeChange: (value: DateRange) => void;
@@ -631,11 +670,13 @@ function ReportingFilters({
   const creators = data.employees.filter(
     (employee) =>
       (employee.role === "sales" || employee.role === "team_lead") &&
+      (teamFilter === "all" || employee.team_id === teamFilter) &&
       data.ambassadors.some((ambassador) => ambassador.sales_id === employee.id),
   );
   const groups = data.ambassadors.filter(
     (ambassador) =>
-      memberFilter === "all" || ambassador.sales_id === memberFilter,
+      (teamFilter === "all" || ambassador.team_id === teamFilter) &&
+      (memberFilter === "all" || ambassador.sales_id === memberFilter),
   );
 
   return (
@@ -644,6 +685,20 @@ function ReportingFilters({
         <BarChart3 size={17} />
         <span><strong>Reporting view</strong><small>Filter every number below</small></span>
       </div>
+      {data.user.role === "admin" && (
+        <label>
+          Team
+          <select
+            value={teamFilter}
+            onChange={(event) => onTeamChange(event.target.value)}
+          >
+            <option value="all">All teams</option>
+            {data.teams.map((team) => (
+              <option key={team.id} value={team.id}>{team.name}</option>
+            ))}
+          </select>
+        </label>
+      )}
       {creators.length > 1 && (
         <label>
           Team member
@@ -802,9 +857,11 @@ function MetricCard({
 
 function TeamsView({
   data,
+  onViewTeam,
   onRefresh,
 }: {
   data: DashboardData;
+  onViewTeam: (id: string) => void;
   onRefresh: () => void;
 }) {
   const teamLeadByTeam = new Map(
@@ -850,12 +907,20 @@ function TeamsView({
                 <span><strong>{team.ambassador_count}</strong> CAs</span>
                 <span><strong>{team.registration_count}</strong> Registrations</span>
               </div>
-              <button
-                className="team-toggle"
-                onClick={() => void toggleTeam(team.id, !team.active)}
-              >
-                {team.active ? "Deactivate team" : "Reactivate team"}
-              </button>
+              <div className="team-card-actions">
+                <button
+                  className="primary-button"
+                  onClick={() => onViewTeam(team.id)}
+                >
+                  <BarChart3 size={16} /> View performance
+                </button>
+                <button
+                  className="team-toggle"
+                  onClick={() => void toggleTeam(team.id, !team.active)}
+                >
+                  {team.active ? "Deactivate team" : "Reactivate team"}
+                </button>
+              </div>
             </article>
           );
         })}
@@ -1002,6 +1067,26 @@ function AmbassadorsView({
     await navigator.clipboard.writeText(value);
   }
 
+  async function remove(
+    id: string,
+    name: string,
+    registrationCount: number,
+  ) {
+    const confirmed = window.confirm(
+      `Permanently delete ${name}'s group and its ${registrationCount} registration${registrationCount === 1 ? "" : "s"}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    const response = await fetch(`/api/ambassadors/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      window.alert(await readError(response));
+      return;
+    }
+    onRefresh();
+  }
+
   return (
     <section>
       <div className="table-toolbar">
@@ -1079,6 +1164,21 @@ function AmbassadorsView({
                   >
                     <RefreshCw size={17} />
                   </button>
+                  {data.user.role !== "sales" && (
+                    <button
+                      className="icon-button danger-icon"
+                      title="Delete group and registrations"
+                      onClick={() =>
+                        void remove(
+                          ambassador.id,
+                          ambassador.name,
+                          ambassador.registration_count,
+                        )
+                      }
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  )}
                 </div>
               </div>
             </article>
@@ -1101,9 +1201,11 @@ function AmbassadorsView({
 
 function LeadsTable({
   registrations,
+  canDelete,
   onRefresh,
 }: {
   registrations: Registration[];
+  canDelete: boolean;
   onRefresh: () => void;
 }) {
   return (
@@ -1112,7 +1214,12 @@ function LeadsTable({
         <span>Student</span><span>Group / CA</span><span>Domain</span><span>Registered</span><span>Status</span><span>Follow-up note</span><span />
       </div>
       {registrations.map((lead) => (
-        <LeadRow key={lead.id} lead={lead} onSaved={onRefresh} />
+        <LeadRow
+          key={lead.id}
+          lead={lead}
+          canDelete={canDelete}
+          onSaved={onRefresh}
+        />
       ))}
       {!registrations.length && (
         <EmptyState
@@ -1124,7 +1231,15 @@ function LeadsTable({
   );
 }
 
-function LeadRow({ lead, onSaved }: { lead: Registration; onSaved: () => void }) {
+function LeadRow({
+  lead,
+  canDelete,
+  onSaved,
+}: {
+  lead: Registration;
+  canDelete: boolean;
+  onSaved: () => void;
+}) {
   const [status, setStatus] = useState<RegistrationStatus>(lead.status);
   const [note, setNote] = useState(lead.note);
   const [saving, setSaving] = useState(false);
@@ -1135,6 +1250,24 @@ function LeadRow({ lead, onSaved }: { lead: Registration; onSaved: () => void })
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status, note }),
+    });
+    setSaving(false);
+    if (!response.ok) {
+      window.alert(await readError(response));
+      return;
+    }
+    onSaved();
+  }
+
+  async function remove() {
+    const confirmed = window.confirm(
+      `Permanently delete ${lead.name}'s registration? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    const response = await fetch(`/api/leads/${lead.id}`, {
+      method: "DELETE",
     });
     setSaving(false);
     if (!response.ok) {
@@ -1165,9 +1298,21 @@ function LeadRow({ lead, onSaved }: { lead: Registration; onSaved: () => void })
         placeholder="Add a follow-up note"
         maxLength={2000}
       />
-      <button className="text-button" onClick={() => void save()} disabled={saving}>
-        {saving ? "Saving" : "Save"}
-      </button>
+      <div className="row-actions compact-actions">
+        <button className="text-button" onClick={() => void save()} disabled={saving}>
+          {saving ? "Saving" : "Save"}
+        </button>
+        {canDelete && (
+          <button
+            className="icon-button danger-icon"
+            title="Delete registration"
+            onClick={() => void remove()}
+            disabled={saving}
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

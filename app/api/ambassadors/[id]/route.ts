@@ -62,3 +62,66 @@ export async function PATCH(
   });
   return NextResponse.json({ ambassador: data });
 }
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  if (!assertSameOrigin(request)) return errorResponse("Invalid request.", 403);
+  const user = await requireApiProfile();
+  if (!user) return errorResponse("Unauthorized.", 401);
+  if (user.role === "sales") {
+    return errorResponse(
+      "Only Team Leads and Admins can delete groups.",
+      403,
+    );
+  }
+
+  const { id } = await context.params;
+  const admin = createAdminSupabase();
+  const { data: ambassador } = await admin
+    .from("ambassadors")
+    .select("id,sales_id,team_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!ambassador) return errorResponse("Campus Ambassador not found.", 404);
+
+  if (user.role === "team_lead" && ambassador.team_id !== user.team_id) {
+    return errorResponse("Unauthorized.", 403);
+  }
+
+  const { count: registrationCount } = await admin
+    .from("registrations")
+    .select("id", { count: "exact", head: true })
+    .eq("ambassador_id", id);
+
+  const { error } = await admin.from("ambassadors").delete().eq("id", id);
+  if (error) {
+    return errorResponse(
+      "Unable to delete this group and its registrations.",
+      500,
+    );
+  }
+
+  await admin.from("audit_events").insert({
+    actor_id: user.id,
+    action: "ambassador_deleted",
+    entity_type: "ambassador",
+    entity_id: id,
+    details: {
+      registration_count: registrationCount ?? 0,
+    },
+  });
+  await admin.from("activity_events").insert({
+    event_type: "ambassador_deleted",
+    actor_id: user.id,
+    team_id: ambassador.team_id,
+    sales_id: ambassador.sales_id,
+    entity_id: id,
+  });
+
+  return NextResponse.json({
+    ok: true,
+    deletedRegistrations: registrationCount ?? 0,
+  });
+}

@@ -1635,6 +1635,20 @@ p {
   background: var(--surface);
 }
 
+.team-card-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.team-card-actions .primary-button,
+.team-card-actions .team-toggle {
+  width: 100%;
+  min-height: 39px;
+  margin-top: 0;
+  justify-content: center;
+}
+
 .data-table {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2551,11 +2565,28 @@ p {
 
 /* Keep expanded registration columns after the legacy table declaration. */
 .lead-grid {
-  grid-template-columns: 1.15fr 1.2fr 0.9fr 0.72fr 0.75fr 1.25fr 0.38fr;
+  grid-template-columns: 1.15fr 1.2fr 0.9fr 0.72fr 0.75fr 1.25fr 0.62fr;
+}
+
+.danger-icon {
+  color: #c53939;
+  border-color: rgba(197, 57, 57, 0.22);
+  background: rgba(197, 57, 57, 0.06);
+}
+
+.danger-icon:hover {
+  color: #fff;
+  border-color: #c53939;
+  background: #c53939;
+}
+
+.compact-actions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
 }
 
 @media (max-width: 760px) {
   .lead-grid {
-    grid-template-columns: 1.15fr 1.2fr 0.9fr 0.72fr 0.75fr 1.25fr 0.38fr;
+    grid-template-columns: 1.15fr 1.2fr 0.9fr 0.72fr 0.75fr 1.25fr 0.62fr;
   }
 }
