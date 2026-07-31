@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage() {
   const profile = await getCurrentProfile();
   if (profile) {
-    redirect(profile.must_change_password ? "/change-password" : roleHome(profile.role));
+    redirect(roleHome(profile.role));
   }
 
   return (

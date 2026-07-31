@@ -16,7 +16,7 @@ const secret = process.env.SUPABASE_SECRET_KEY;
 
 if (!name || !email || password.length < 10) {
   throw new Error(
-    "Provide --name, --email, and a temporary --password of at least 10 characters.",
+    "Provide --name, --email, and a --password of at least 10 characters.",
   );
 }
 
@@ -44,7 +44,7 @@ const { error: profileError } = await supabase.from("profiles").insert({
   email,
   role: "admin",
   active: true,
-  must_change_password: true,
+  must_change_password: false,
 });
 
 if (profileError) {

@@ -16,9 +16,6 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await requireApiProfile();
   if (!user) return errorResponse("Unauthorized.", 401);
-  if (user.must_change_password) {
-    return errorResponse("Password change required.", 403);
-  }
 
   const admin = createAdminSupabase();
   await admin.rpc("anonymize_expired_registrations");
@@ -27,7 +24,7 @@ export async function GET() {
   let employeesQuery = admin
     .from("profiles")
     .select(
-      "id,full_name,email,phone,role,team_id,active,must_change_password,created_at",
+      "id,full_name,email,phone,role,team_id,active,created_at",
     )
     .order("created_at", { ascending: false });
   let salesQuery = admin

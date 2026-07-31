@@ -45,11 +45,7 @@ export function LoginPanel() {
       return;
     }
 
-    router.replace(
-      result.user.must_change_password
-        ? "/change-password"
-        : homeFor(result.user.role),
-    );
+    router.replace(homeFor(result.user.role));
     router.refresh();
   }
 

@@ -8,6 +8,7 @@ export type EmployeeInput = {
   phone?: unknown;
   role?: unknown;
   teamId?: unknown;
+  password?: unknown;
   temporaryPassword?: unknown;
 };
 
@@ -21,9 +22,11 @@ export async function createEmployee(
   const phone = rawPhone ? normalizeIndianPhone(rawPhone) : "";
   const role = input.role as AppRole;
   const teamId = cleanText(input.teamId, 80);
-  const temporaryPassword =
-    typeof input.temporaryPassword === "string"
-      ? input.temporaryPassword
+  const password =
+    typeof input.password === "string"
+      ? input.password
+      : typeof input.temporaryPassword === "string"
+        ? input.temporaryPassword
       : "";
 
   if (
@@ -31,11 +34,11 @@ export async function createEmployee(
     !validEmail(email) ||
     !["team_lead", "sales"].includes(role) ||
     !teamId ||
-    temporaryPassword.length < 12 ||
+    password.length < 12 ||
     (rawPhone && !phone)
   ) {
     throw new Error(
-      "Use a valid name, email, team, role, optional Indian phone, and temporary password of at least 12 characters.",
+      "Use a valid name, email, team, role, optional Indian phone, and login password of at least 12 characters.",
     );
   }
 
@@ -50,7 +53,7 @@ export async function createEmployee(
 
   const { data, error: authError } = await admin.auth.admin.createUser({
     email,
-    password: temporaryPassword,
+    password,
     email_confirm: true,
   });
   if (authError || !data.user) {
@@ -65,7 +68,7 @@ export async function createEmployee(
     role,
     team_id: teamId,
     active: true,
-    must_change_password: true,
+    must_change_password: false,
   });
 
   if (profileError) {
@@ -100,6 +103,5 @@ export async function createEmployee(
     role,
     team_id: teamId,
     active: true,
-    must_change_password: true,
   };
 }

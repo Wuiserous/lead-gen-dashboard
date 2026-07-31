@@ -14,7 +14,7 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   const { data } = await createAdminSupabase()
     .from("profiles")
     .select(
-      "id,full_name,email,phone,role,team_id,active,must_change_password,created_at",
+      "id,full_name,email,phone,role,team_id,active,created_at",
     )
     .eq("id", user.id)
     .maybeSingle();
@@ -26,7 +26,6 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 export async function requirePageProfile(roles?: AppRole[]) {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/");
-  if (profile.must_change_password) redirect("/change-password");
   if (roles && !roles.includes(profile.role)) redirect(roleHome(profile.role));
   return profile;
 }

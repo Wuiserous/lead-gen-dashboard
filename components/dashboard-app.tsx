@@ -1431,7 +1431,7 @@ function EmployeeForm({
   onDone: () => void;
 }) {
   const [form, setForm] = useState({
-    fullName: "", email: "", phone: "", role: "sales", teamId: "", temporaryPassword: "",
+    fullName: "", email: "", phone: "", role: "sales", teamId: "", password: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1453,14 +1453,14 @@ function EmployeeForm({
     <>
       <span className="eyebrow">EMPLOYEE ACCESS</span>
       <h2>Add an employee</h2>
-      <p className="muted">They must replace the temporary password after signing in.</p>
+      <p className="muted">Create the credentials they will use to sign in.</p>
       <form className="stack-form two-column" onSubmit={submit}>
         <label>Full name<input className="plain-input" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required /></label>
         <label>Work email<input className="plain-input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
         <label>Phone (optional)<input className="plain-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
         <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="sales">Sales Executive</option><option value="team_lead">Team Lead</option></select></label>
         <label>Team<select value={form.teamId} onChange={(e) => setForm({ ...form, teamId: e.target.value })} required><option value="">Select team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-        <label>Temporary password<input className="plain-input" type="password" value={form.temporaryPassword} onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })} minLength={12} required /></label>
+        <label>Login password<input className="plain-input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} minLength={12} required /></label>
         {error && <div className="alert error full-span">{error}</div>}
         <button className="primary-button wide full-span" disabled={loading}>{loading ? "Creating..." : "Create employee"}</button>
       </form>
@@ -1496,7 +1496,7 @@ function EmployeeImport({
       phone: row.phone ?? "",
       role: (row.role ?? "sales").toLowerCase().replace(/\s+/g, "_"),
       teamId: teamByName.get((row.team ?? row.team_name ?? "").toLowerCase()) ?? "",
-      temporaryPassword: row.temporary_password ?? row.password,
+      password: row.password ?? row.temporary_password,
     }));
     const response = await fetch("/api/employees/import", {
       method: "POST",
@@ -1519,7 +1519,7 @@ function EmployeeImport({
       <span className="eyebrow">BULK ONBOARDING</span>
       <h2>Import employees</h2>
       <p className="muted">
-        CSV headers: name, email, phone, role, team, temporary_password.
+        CSV headers: name, email, phone, role, team, password.
       </p>
       <div className="upload-zone">
         <Upload size={24} />

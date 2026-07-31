@@ -45,5 +45,4 @@ needed by the local migration command; the deployed app does not open direct
 Postgres connections.
 
 In Supabase Authentication URL settings, set the Site URL to the production
-domain and add the same domain to Redirect URLs. The initial Admin is required
-to replace the temporary password on first sign-in.
+domain and add the same domain to Redirect URLs.

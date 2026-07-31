@@ -8,7 +8,6 @@ export type Profile = {
   role: AppRole;
   team_id: string | null;
   active: boolean;
-  must_change_password: boolean;
   created_at: string;
 };
 
