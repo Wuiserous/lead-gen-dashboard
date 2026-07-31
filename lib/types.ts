@@ -70,6 +70,7 @@ export type Registration = {
   credited_team_id: string;
   name: string;
   phone: string;
+  preferred_domain: string;
   status: RegistrationStatus;
   note: string;
   created_at: string;

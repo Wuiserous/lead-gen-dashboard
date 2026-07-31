@@ -1,9 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronDown } from "lucide-react";
+import { internshipDomains } from "@/lib/domains";
 
-export function StudentRegistrationForm({ slug }: { slug: string }) {
+export function StudentRegistrationForm({
+  slug,
+  domain,
+  onDomainChange,
+}: {
+  slug: string;
+  domain: string;
+  onDomainChange: (domain: string) => void;
+}) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [website, setWebsite] = useState("");
@@ -18,7 +27,7 @@ export function StudentRegistrationForm({ slug }: { slug: string }) {
     const response = await fetch("/api/public/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slug, name, phone, website }),
+      body: JSON.stringify({ slug, name, phone, domain, website }),
     });
     const result = await response.json();
     setLoading(false);
@@ -45,9 +54,27 @@ export function StudentRegistrationForm({ slug }: { slug: string }) {
 
   return (
     <form className="registration-card" onSubmit={submit}>
-      <span className="eyebrow">REGISTER YOUR INTEREST</span>
-      <h2>Take the first step</h2>
-      <p>Enter two details. It takes less than a minute.</p>
+      <span className="eyebrow">YOUR INTERNSHIP PATH</span>
+      <h2>Reserve your opportunity</h2>
+      <p>Choose a domain and register in less than a minute.</p>
+      <label>
+        Preferred internship domain
+        <span className="domain-select-field">
+          <select
+            value={domain}
+            onChange={(event) => onDomainChange(event.target.value)}
+            required
+          >
+            <option value="">Select the domain you want</option>
+            {internshipDomains.map((item) => (
+              <option key={item.name} value={item.name}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={17} />
+        </span>
+      </label>
       <label>
         Full name
         <input
@@ -91,7 +118,7 @@ export function StudentRegistrationForm({ slug }: { slug: string }) {
       </label>
       {error && <div className="alert error">{error}</div>}
       <button className="gold-button wide" type="submit" disabled={loading}>
-        {loading ? "Registering..." : "Register now"}
+        {loading ? "Registering..." : "Register for this domain"}
         {!loading && <ArrowRight size={18} />}
       </button>
     </form>

@@ -31,7 +31,7 @@ export async function GET() {
     )
     .order("created_at", { ascending: false });
   let salesQuery = admin
-    .from("sales_performance")
+    .from("member_performance")
     .select("*")
     .order("registration_count", { ascending: false });
   let ambassadorsQuery = admin
@@ -41,7 +41,7 @@ export async function GET() {
   let registrationsQuery = admin
     .from("registrations")
     .select(
-      "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)",
+      "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)",
     )
     .order("created_at", { ascending: false })
     .limit(1000);

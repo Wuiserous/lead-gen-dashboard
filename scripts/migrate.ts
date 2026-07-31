@@ -34,13 +34,10 @@ function resolveDatabaseUrl() {
 
 const databaseUrl = resolveDatabaseUrl();
 
-const migrationPath = path.join(
-  process.cwd(),
-  "supabase",
-  "migrations",
-  "0001_initial.sql",
-);
-const migration = await fs.readFile(migrationPath, "utf8");
+const migrationsPath = path.join(process.cwd(), "supabase", "migrations");
+const migrationFiles = (await fs.readdir(migrationsPath))
+  .filter((file) => file.endsWith(".sql"))
+  .sort();
 const sql = postgres(databaseUrl, {
   max: 1,
   prepare: false,
@@ -48,8 +45,12 @@ const sql = postgres(databaseUrl, {
 });
 
 try {
-  await sql.unsafe(migration);
-  console.log("Supabase migration applied successfully.");
+  for (const file of migrationFiles) {
+    const migration = await fs.readFile(path.join(migrationsPath, file), "utf8");
+    await sql.unsafe(migration);
+    console.log(`Applied ${file}.`);
+  }
+  console.log("Supabase migrations applied successfully.");
 } finally {
   await sql.end();
 }

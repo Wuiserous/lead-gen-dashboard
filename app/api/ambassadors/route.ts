@@ -10,7 +10,7 @@ import {
 
 export async function POST(request: Request) {
   if (!assertSameOrigin(request)) return errorResponse("Invalid request.", 403);
-  const user = await requireApiProfile(["sales"]);
+  const user = await requireApiProfile(["sales", "team_lead"]);
   if (!user) return errorResponse("Unauthorized.", 401);
   if (!user.team_id) return errorResponse("No team is assigned.", 409);
 

@@ -26,7 +26,7 @@ export default async function LoginPage() {
           <span className="eyebrow light">PERSEVEX LEADGEN</span>
           <h1>One system for every campus registration.</h1>
           <p>
-            Create ambassadors, distribute official referral links, and watch
+            Create campus groups, distribute official referral links, and watch
             team performance update as registrations arrive.
           </p>
         </div>

@@ -4,12 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Award,
+  BarChart3,
   Building2,
+  CalendarDays,
   Check,
   ChevronRight,
   Clipboard,
   Copy,
   LayoutDashboard,
+  Layers3,
   Link2,
   LogOut,
   Menu,
@@ -39,6 +42,7 @@ import type {
 
 type Tab = "overview" | "teams" | "employees" | "ambassadors" | "leads";
 type ModalName = "team" | "employee" | "import" | "ambassador" | null;
+type DateRange = "all" | "today" | "7d" | "30d";
 
 const statusLabels: Record<RegistrationStatus, string> = {
   new: "New",
@@ -62,6 +66,20 @@ function formatDate(value: string) {
     month: "short",
     year: "numeric",
   });
+}
+
+function inDateRange(value: string, range: DateRange) {
+  if (range === "all") return true;
+  const date = new Date(value);
+  const now = new Date();
+  if (range === "today") {
+    return date.toDateString() === now.toDateString();
+  }
+  const days = range === "7d" ? 7 : 30;
+  const start = new Date(now);
+  start.setDate(now.getDate() - (days - 1));
+  start.setHours(0, 0, 0, 0);
+  return date >= start;
 }
 
 function publicBaseUrl() {
@@ -90,6 +108,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [live, setLive] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [memberFilter, setMemberFilter] = useState("all");
+  const [dateRange, setDateRange] = useState<DateRange>("all");
 
   const load = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -184,17 +205,30 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
           },
         ]
       : []),
-    { id: "ambassadors", label: "Ambassadors", icon: <Users size={18} /> },
+    { id: "ambassadors", label: "Groups & CAs", icon: <Layers3 size={18} /> },
     { id: "leads", label: "Registrations", icon: <Clipboard size={18} /> },
   ];
+
+  const filteredAmbassadors = data.ambassadors.filter((ambassador) => {
+    return (
+      (memberFilter === "all" || ambassador.sales_id === memberFilter) &&
+      (groupFilter === "all" || ambassador.id === groupFilter)
+    );
+  });
 
   const filteredRegistrations = data.registrations.filter((lead) => {
     const needle = search.toLowerCase();
     return (
-      !needle ||
-      lead.name.toLowerCase().includes(needle) ||
-      lead.phone.includes(needle) ||
-      ambassadorLabel(lead).toLowerCase().includes(needle)
+      (memberFilter === "all" || lead.credited_sales_id === memberFilter) &&
+      (groupFilter === "all" || lead.ambassador_id === groupFilter) &&
+      inDateRange(lead.created_at, dateRange) &&
+      (
+        !needle ||
+        lead.name.toLowerCase().includes(needle) ||
+        lead.phone.includes(needle) ||
+        lead.preferred_domain.toLowerCase().includes(needle) ||
+        ambassadorLabel(lead).toLowerCase().includes(needle)
+      )
     );
   });
 
@@ -280,9 +314,10 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 </button>
               </>
             )}
-            {data.user.role === "sales" && tab === "ambassadors" && (
+            {(data.user.role === "sales" || data.user.role === "team_lead") &&
+              tab === "ambassadors" && (
               <button className="primary-button" onClick={() => setModal("ambassador")}>
-                <Plus size={17} /> Add ambassador
+                <Plus size={17} /> Create group
               </button>
             )}
           </div>
@@ -292,33 +327,96 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
 
         <div className="dashboard-content">
           {tab === "overview" && (
-            <Overview data={data} onRefresh={() => void load(true)} />
+            <Overview
+              data={data}
+              registrations={filteredRegistrations}
+              ambassadors={filteredAmbassadors}
+              filters={
+                <ReportingFilters
+                  data={data}
+                  groupFilter={groupFilter}
+                  memberFilter={memberFilter}
+                  dateRange={dateRange}
+                  onGroupChange={setGroupFilter}
+                  onMemberChange={(value) => {
+                    setMemberFilter(value);
+                    setGroupFilter("all");
+                  }}
+                  onDateRangeChange={setDateRange}
+                />
+              }
+              onRefresh={() => void load(true)}
+            />
           )}
           {tab === "teams" && (
             <TeamsView data={data} onRefresh={() => void load(true)} />
           )}
           {tab === "employees" && (
-            <EmployeesView data={data} onRefresh={() => void load(true)} />
+            <EmployeesView
+              data={data}
+              onViewMember={(id) => {
+                setMemberFilter(id);
+                setGroupFilter("all");
+                setTab("ambassadors");
+              }}
+              onRefresh={() => void load(true)}
+            />
           )}
           {tab === "ambassadors" && (
-            <AmbassadorsView data={data} onRefresh={() => void load(true)} />
+            <AmbassadorsView
+              data={data}
+              ambassadors={filteredAmbassadors}
+              filters={
+                <ReportingFilters
+                  data={data}
+                  groupFilter={groupFilter}
+                  memberFilter={memberFilter}
+                  dateRange={dateRange}
+                  onGroupChange={setGroupFilter}
+                  onMemberChange={(value) => {
+                    setMemberFilter(value);
+                    setGroupFilter("all");
+                  }}
+                  onDateRangeChange={setDateRange}
+                  hideDate
+                />
+              }
+              onViewGroup={(id) => {
+                setGroupFilter(id);
+                setTab("leads");
+              }}
+              onRefresh={() => void load(true)}
+            />
           )}
           {tab === "leads" && (
             <section>
               <div className="table-toolbar">
                 <div>
                   <h2>Student registrations</h2>
-                  <p>{data.registrations.length} records available in your scope</p>
+                  <p>{filteredRegistrations.length} registrations in this view</p>
                 </div>
                 <label className="search-box">
                   <Search size={17} />
                   <input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search name, phone, or ambassador"
+                    placeholder="Search student, domain, or group"
                   />
                 </label>
               </div>
+              <ReportingFilters
+                data={data}
+                groupFilter={groupFilter}
+                memberFilter={memberFilter}
+                dateRange={dateRange}
+                onGroupChange={setGroupFilter}
+                onMemberChange={(value) => {
+                  setMemberFilter(value);
+                  setGroupFilter("all");
+                }}
+                onDateRangeChange={setDateRange}
+              />
+              <LeadViewSummary registrations={filteredRegistrations} />
               <LeadsTable
                 registrations={filteredRegistrations}
                 onRefresh={() => void load(true)}
@@ -377,30 +475,34 @@ function pageTitle(tab: Tab, role: AppRole) {
   }
   if (tab === "teams") return "Teams";
   if (tab === "employees") return role === "admin" ? "Employees" : "Team members";
-  if (tab === "ambassadors") return "Campus Ambassadors";
+  if (tab === "ambassadors") return "Groups & Campus Ambassadors";
   return "Registrations";
 }
 
 function Overview({
   data,
+  registrations,
+  ambassadors,
+  filters,
   onRefresh,
 }: {
   data: DashboardData;
+  registrations: Registration[];
+  ambassadors: DashboardData["ambassadors"];
+  filters: React.ReactNode;
   onRefresh: () => void;
 }) {
-  const totalRegistrations =
-    data.user.role === "admin"
-      ? data.teams.reduce((sum, team) => sum + team.registration_count, 0)
-      : data.user.role === "team_lead"
-        ? (data.teams[0]?.registration_count ?? 0)
-        : (data.salesPerformance[0]?.registration_count ?? 0);
-  const qualified = data.ambassadors.filter((item) => item.qualified).length;
-  const activeAmbassadors = data.ambassadors.filter(
+  const totalRegistrations = registrations.filter(
+    (item) => item.status !== "invalid",
+  ).length;
+  const qualified = ambassadors.filter((item) => item.qualified).length;
+  const activeAmbassadors = ambassadors.filter(
     (item) => item.status === "active",
   ).length;
 
   return (
     <section className="overview-stack">
+      {filters}
       <div className="metric-grid">
         <MetricCard
           label="Registrations"
@@ -410,7 +512,7 @@ function Overview({
         />
         <MetricCard
           label="Campus Ambassadors"
-          value={data.ambassadors.length}
+          value={ambassadors.length}
           detail={`${activeAmbassadors} currently active`}
           icon={<Users size={21} />}
         />
@@ -421,15 +523,15 @@ function Overview({
           icon={<Award size={21} />}
         />
         <MetricCard
-          label={data.user.role === "admin" ? "Sales Executives" : "Team target"}
+          label={data.user.role === "admin" ? "Group creators" : "Team target"}
           value={
             data.user.role === "admin"
-              ? data.salesPerformance.filter((item) => item.active).length
+              ? new Set(ambassadors.map((item) => item.sales_id)).size
               : data.defaultTarget
           }
           detail={
             data.user.role === "admin"
-              ? "Active across all teams"
+              ? "Members represented in this view"
               : "Default registrations per ambassador"
           }
           icon={<Target size={21} />}
@@ -443,10 +545,10 @@ function Overview({
               <span className="eyebrow">PERFORMANCE</span>
               <h2>Ambassador progress</h2>
             </div>
-            <span className="panel-count">{data.ambassadors.length}</span>
+            <span className="panel-count">{ambassadors.length}</span>
           </div>
           <div className="progress-list">
-            {data.ambassadors.slice(0, 6).map((ambassador) => (
+            {ambassadors.slice(0, 6).map((ambassador) => (
               <div key={ambassador.id} className="progress-list-row">
                 <div className="avatar">{ambassador.name[0]}</div>
                 <div className="progress-list-main">
@@ -467,7 +569,7 @@ function Overview({
                 </strong>
               </div>
             ))}
-            {!data.ambassadors.length && (
+            {!ambassadors.length && (
               <EmptyState
                 title="No ambassadors yet"
                 text={
@@ -502,7 +604,176 @@ function Overview({
           )}
         </div>
       </div>
+      <ReportingInsights data={data} registrations={registrations} ambassadors={ambassadors} />
     </section>
+  );
+}
+
+function ReportingFilters({
+  data,
+  groupFilter,
+  memberFilter,
+  dateRange,
+  onGroupChange,
+  onMemberChange,
+  onDateRangeChange,
+  hideDate = false,
+}: {
+  data: DashboardData;
+  groupFilter: string;
+  memberFilter: string;
+  dateRange: DateRange;
+  onGroupChange: (value: string) => void;
+  onMemberChange: (value: string) => void;
+  onDateRangeChange: (value: DateRange) => void;
+  hideDate?: boolean;
+}) {
+  const creators = data.employees.filter(
+    (employee) =>
+      (employee.role === "sales" || employee.role === "team_lead") &&
+      data.ambassadors.some((ambassador) => ambassador.sales_id === employee.id),
+  );
+  const groups = data.ambassadors.filter(
+    (ambassador) =>
+      memberFilter === "all" || ambassador.sales_id === memberFilter,
+  );
+
+  return (
+    <div className="reporting-filters">
+      <div className="filter-heading">
+        <BarChart3 size={17} />
+        <span><strong>Reporting view</strong><small>Filter every number below</small></span>
+      </div>
+      {creators.length > 1 && (
+        <label>
+          Team member
+          <select value={memberFilter} onChange={(event) => onMemberChange(event.target.value)}>
+            <option value="all">All team members</option>
+            {creators.map((creator) => (
+              <option key={creator.id} value={creator.id}>{creator.full_name}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label>
+        Group / Campus Ambassador
+        <select value={groupFilter} onChange={(event) => onGroupChange(event.target.value)}>
+          <option value="all">All groups</option>
+          {groups.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name} · {group.college}
+            </option>
+          ))}
+        </select>
+      </label>
+      {!hideDate && (
+        <label>
+          Date
+          <select
+            value={dateRange}
+            onChange={(event) => onDateRangeChange(event.target.value as DateRange)}
+          >
+            <option value="all">All time</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </select>
+        </label>
+      )}
+    </div>
+  );
+}
+
+function LeadViewSummary({ registrations }: { registrations: Registration[] }) {
+  const valid = registrations.filter((item) => item.status !== "invalid");
+  const today = valid.filter((item) => inDateRange(item.created_at, "today")).length;
+  const converted = valid.filter((item) => item.status === "converted").length;
+  const groups = new Set(valid.map((item) => item.ambassador_id)).size;
+  return (
+    <div className="lead-view-summary">
+      <span><strong>{valid.length}</strong> Valid registrations</span>
+      <span><strong>{today}</strong> Today</span>
+      <span><strong>{groups}</strong> Groups represented</span>
+      <span><strong>{converted}</strong> Converted</span>
+    </div>
+  );
+}
+
+function ReportingInsights({
+  data,
+  registrations,
+  ambassadors,
+}: {
+  data: DashboardData;
+  registrations: Registration[];
+  ambassadors: DashboardData["ambassadors"];
+}) {
+  const valid = registrations.filter((item) => item.status !== "invalid");
+  const creatorNames = new Map(
+    data.employees.map((employee) => [employee.id, employee.full_name]),
+  );
+  const days = Array.from({ length: 14 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (13 - index));
+    date.setHours(0, 0, 0, 0);
+    const next = new Date(date);
+    next.setDate(date.getDate() + 1);
+    return {
+      date,
+      count: valid.filter((item) => {
+        const created = new Date(item.created_at);
+        return created >= date && created < next;
+      }).length,
+    };
+  });
+  const max = Math.max(1, ...days.map((day) => day.count));
+  const groupRows = ambassadors
+    .map((ambassador) => ({
+      ...ambassador,
+      visibleCount: valid.filter(
+        (item) => item.ambassador_id === ambassador.id,
+      ).length,
+    }))
+    .sort((a, b) => b.visibleCount - a.visibleCount)
+    .slice(0, 8);
+
+  return (
+    <div className="insights-grid">
+      <section className="panel daily-panel">
+        <div className="panel-head">
+          <div><span className="eyebrow">DAY-WISE VIEW</span><h2>Last 14 days</h2></div>
+          <CalendarDays size={20} />
+        </div>
+        <div className="daily-chart">
+          {days.map((day) => (
+            <div className="daily-bar-column" key={day.date.toISOString()}>
+              <span className="daily-count">{day.count || ""}</span>
+              <span
+                className="daily-bar"
+                style={{ height: `${Math.max(5, (day.count / max) * 100)}%` }}
+              />
+              <small>{day.date.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</small>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="panel group-ranking-panel">
+        <div className="panel-head">
+          <div><span className="eyebrow">GROUP-WISE VIEW</span><h2>Registration sources</h2></div>
+          <Layers3 size={20} />
+        </div>
+        <div className="group-ranking-list">
+          {groupRows.map((group) => (
+            <div key={group.id}>
+              <span className="avatar">{group.name[0]}</span>
+              <span><strong>{group.name}</strong><small>{creatorNames.get(group.sales_id) ?? "Team member"} · {group.college}</small></span>
+              <b>{group.visibleCount}</b>
+            </div>
+          ))}
+          {!groupRows.length && <EmptyState title="No groups in view" text="Adjust the filters or create a group." />}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -598,9 +869,11 @@ function TeamsView({
 
 function EmployeesView({
   data,
+  onViewMember,
   onRefresh,
 }: {
   data: DashboardData;
+  onViewMember: (id: string) => void;
   onRefresh: () => void;
 }) {
   const teamNames = new Map(data.teams.map((team) => [team.id, team.name]));
@@ -670,16 +943,24 @@ function EmployeesView({
                     ? "Team oversight"
                     : "Organization access"}
               </span>
-              {data.user.role === "admin" && employee.role !== "admin" ? (
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    void patchEmployee(employee.id, { active: !employee.active })
-                  }
-                >
-                  {employee.active ? "Suspend" : "Reactivate"}
-                </button>
-              ) : <span />}
+              <div className="row-actions">
+                {(employee.role === "sales" || employee.role === "team_lead") &&
+                  data.ambassadors.some((item) => item.sales_id === employee.id) && (
+                    <button className="text-button" onClick={() => onViewMember(employee.id)}>
+                      View groups
+                    </button>
+                  )}
+                {data.user.role === "admin" && employee.role !== "admin" && (
+                  <button
+                    className="text-button danger-text"
+                    onClick={() =>
+                      void patchEmployee(employee.id, { active: !employee.active })
+                    }
+                  >
+                    {employee.active ? "Suspend" : "Reactivate"}
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
@@ -690,11 +971,20 @@ function EmployeesView({
 
 function AmbassadorsView({
   data,
+  ambassadors,
+  filters,
+  onViewGroup,
   onRefresh,
 }: {
   data: DashboardData;
+  ambassadors: DashboardData["ambassadors"];
+  filters: React.ReactNode;
+  onViewGroup: (id: string) => void;
   onRefresh: () => void;
 }) {
+  const creatorNames = new Map(
+    data.employees.map((employee) => [employee.id, employee.full_name]),
+  );
   async function update(id: string, body: Record<string, unknown>) {
     const response = await fetch(`/api/ambassadors/${id}`, {
       method: "PATCH",
@@ -716,15 +1006,16 @@ function AmbassadorsView({
     <section>
       <div className="table-toolbar">
         <div>
-          <h2>Campus Ambassador performance</h2>
-          <p>Every public link is attributed to exactly one ambassador.</p>
+          <h2>Groups and Campus Ambassadors</h2>
+          <p>One Campus Ambassador equals one group and one registration source.</p>
         </div>
       </div>
+      {filters}
       <div className="ambassador-grid">
-        {data.ambassadors.map((ambassador) => {
+        {ambassadors.map((ambassador) => {
           const link = `${publicBaseUrl()}/join/${ambassador.public_slug}`;
           const progressLink = `${publicBaseUrl()}/ca/${ambassador.progress_key}`;
-          const draft = `Hi! Persevex is accepting student registrations for internship and career opportunities across 12+ domains, real-world projects, live mentor access, and up to INR 18,000-25,000 stipend based upon performance.\n\nRegister through my official invitation:\n${link}`;
+          const draft = `Hi! Persevex is accepting student registrations for internship and career opportunities across 23 domains, real-world projects, live mentor access, and up to INR 18,000-25,000 stipend based upon performance.\n\nChoose your preferred domain and register through my official invitation:\n${link}`;
           const percentage = Math.min(
             100,
             Math.round((ambassador.registration_count / ambassador.target) * 100),
@@ -733,7 +1024,11 @@ function AmbassadorsView({
             <article className="ambassador-card" key={ambassador.id}>
               <div className="ambassador-head">
                 <span className="avatar large">{ambassador.name[0]}</span>
-                <div><h3>{ambassador.name}</h3><p>{ambassador.college}</p></div>
+                <div>
+                  <h3>{ambassador.name}</h3>
+                  <p>{ambassador.college}</p>
+                  <small>Created by {creatorNames.get(ambassador.sales_id) ?? "Team member"}</small>
+                </div>
                 <span className={`status-dot ${ambassador.status === "active" ? "active" : ""}`}>
                   {ambassador.status}
                 </span>
@@ -753,6 +1048,12 @@ function AmbassadorsView({
                 <button onClick={() => void copy(link)}><Link2 size={16} /> Referral link</button>
                 <button onClick={() => void copy(progressLink)}><Target size={16} /> Progress link</button>
               </div>
+              <button
+                className="view-group-button"
+                onClick={() => onViewGroup(ambassador.id)}
+              >
+                View registrations from this group <ChevronRight size={16} />
+              </button>
               <div className="ambassador-footer">
                 <span>{ambassador.phone}</span>
                 <div>
@@ -783,13 +1084,13 @@ function AmbassadorsView({
             </article>
           );
         })}
-        {!data.ambassadors.length && (
+        {!ambassadors.length && (
           <EmptyState
             title="No Campus Ambassadors"
             text={
-              data.user.role === "sales"
-                ? "Add your first ambassador to generate an official referral link."
-                : "Ambassadors created by Sales will appear here."
+              data.user.role === "admin"
+                ? "Groups created by Team Leads and Sales will appear here."
+                : "Create your first group to generate an official referral link."
             }
           />
         )}
@@ -808,7 +1109,7 @@ function LeadsTable({
   return (
     <div className="data-table">
       <div className="data-row lead-grid table-header">
-        <span>Student</span><span>Ambassador</span><span>Registered</span><span>Status</span><span>Follow-up note</span><span />
+        <span>Student</span><span>Group / CA</span><span>Domain</span><span>Registered</span><span>Status</span><span>Follow-up note</span><span />
       </div>
       {registrations.map((lead) => (
         <LeadRow key={lead.id} lead={lead} onSaved={onRefresh} />
@@ -850,6 +1151,7 @@ function LeadRow({ lead, onSaved }: { lead: Registration; onSaved: () => void })
         <div><strong>{lead.name}</strong><small>{lead.phone}</small></div>
       </div>
       <span>{ambassadorLabel(lead)}</span>
+      <span className="domain-tag">{lead.preferred_domain}</span>
       <span>{formatDate(lead.created_at)}</span>
       <select value={status} onChange={(event) => setStatus(event.target.value as RegistrationStatus)}>
         {Object.entries(statusLabels).map(([value, label]) => (
@@ -1063,8 +1365,8 @@ function AmbassadorForm({ onDone }: { onDone: () => void }) {
   return (
     <>
       <span className="eyebrow">CAMPUS NETWORK</span>
-      <h2>Add a Campus Ambassador</h2>
-      <p className="muted">The referral and private progress links are generated automatically.</p>
+      <h2>Create a group</h2>
+      <p className="muted">Each Campus Ambassador is one group. Referral and private progress links are generated automatically.</p>
       <form className="stack-form two-column" onSubmit={submit}>
         <label>Full name<input className="plain-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
         <label>Mobile number<input className="plain-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required /></label>
@@ -1072,7 +1374,7 @@ function AmbassadorForm({ onDone }: { onDone: () => void }) {
         <label>City<input className="plain-input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></label>
         <label>Course and year<input className="plain-input" value={form.courseYear} onChange={(e) => setForm({ ...form, courseYear: e.target.value })} /></label>
         {error && <div className="alert error full-span">{error}</div>}
-        <button className="primary-button wide full-span" disabled={loading}>{loading ? "Creating..." : "Create ambassador"}</button>
+        <button className="primary-button wide full-span" disabled={loading}>{loading ? "Creating..." : "Create group and ambassador"}</button>
       </form>
     </>
   );

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { registrationRateLimitSecret } from "@/lib/env";
+import { isInternshipDomain } from "@/lib/domains";
 import { errorResponse } from "@/lib/http";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import {
@@ -15,8 +16,11 @@ export async function POST(request: Request) {
   const slug = cleanText(body.slug, 100);
   const name = cleanText(body.name, 100);
   const phone = normalizeIndianPhone(body.phone);
-  if (!slug || name.length < 2 || !phone) {
-    return errorResponse("Enter your full name and a valid Indian mobile number.");
+  const domain = cleanText(body.domain, 100);
+  if (!slug || name.length < 2 || !phone || !isInternshipDomain(domain)) {
+    return errorResponse(
+      "Enter your full name, a valid Indian mobile number, and select an internship domain.",
+    );
   }
 
   const forwarded = request.headers.get("x-forwarded-for") ?? "";
@@ -26,6 +30,7 @@ export async function POST(request: Request) {
     p_slug: slug,
     p_name: name,
     p_phone: phone,
+    p_domain: domain,
     p_ip_hash: secureHash(ip, secret),
     p_phone_hash: secureHash(phone, secret),
   });
