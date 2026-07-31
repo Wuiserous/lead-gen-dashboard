@@ -2,12 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity,
   Award,
   BarChart3,
   Building2,
   CalendarDays,
-  Check,
   ChevronRight,
   Clipboard,
   Copy,
@@ -573,7 +571,11 @@ function Overview({
         />
       </div>
 
-      <div className="overview-grid">
+      <div
+        className={`overview-grid ${
+          data.user.role === "admin" ? "" : "single-column"
+        }`}
+      >
         <div className="panel">
           <div className="panel-head">
             <div>
@@ -617,27 +619,14 @@ function Overview({
           </div>
         </div>
 
-        <div className="panel activity-panel">
-          <div className="panel-head">
-            <div>
-              <span className="eyebrow">SYSTEM</span>
-              <h2>How counting works</h2>
-            </div>
-            <Activity size={21} />
-          </div>
-          <div className="rule-list">
-            <div><Check size={17} /><span>One phone number counts once company-wide.</span></div>
-            <div><Check size={17} /><span>First successful registration receives credit.</span></div>
-            <div><Check size={17} /><span>There is no maximum registration count.</span></div>
-            <div><Check size={17} /><span>Invalid registrations stop counting toward qualification.</span></div>
-          </div>
-          {data.user.role === "admin" && (
+        {data.user.role === "admin" && (
+          <div className="panel settings-panel">
             <DefaultTargetForm
               value={data.defaultTarget}
               onDone={onRefresh}
             />
-          )}
-        </div>
+          </div>
+        )}
       </div>
       <ReportingInsights data={data} registrations={registrations} ambassadors={ambassadors} />
     </section>

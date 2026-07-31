@@ -1362,6 +1362,10 @@ p {
   gap: 17px;
 }
 
+.overview-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
 .panel {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -1461,32 +1465,18 @@ p {
   background: var(--gold);
 }
 
-.rule-list {
-  display: grid;
-  gap: 13px;
-}
-
-.rule-list > div {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  color: var(--muted);
-  font-size: 0.79rem;
-  line-height: 1.45;
-}
-
-.rule-list svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: var(--green);
-}
-
 .target-setting {
   display: grid;
   gap: 12px;
   margin-top: 22px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
+}
+
+.settings-panel .target-setting {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .target-setting > div {
