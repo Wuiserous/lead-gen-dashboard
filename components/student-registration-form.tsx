@@ -8,10 +8,12 @@ export function StudentRegistrationForm({
   slug,
   domain,
   onDomainChange,
+  onRegistered,
 }: {
   slug: string;
   domain: string;
   onDomainChange: (domain: string) => void;
+  onRegistered: () => void;
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -36,6 +38,7 @@ export function StudentRegistrationForm({
       return;
     }
     setDone(true);
+    onRegistered();
   }
 
   if (done) {
@@ -45,8 +48,8 @@ export function StudentRegistrationForm({
         <span className="eyebrow">REGISTRATION COMPLETE</span>
         <h2>You are successfully registered.</h2>
         <p>
-          Your details have been shared with the official Persevex team. A
-          representative may contact you with relevant next steps.
+          Your details have been shared with the official Persevex team. Our
+          team will contact you soon with the next steps.
         </p>
       </div>
     );

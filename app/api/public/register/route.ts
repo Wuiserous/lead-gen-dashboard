@@ -26,13 +26,39 @@ export async function POST(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for") ?? "";
   const ip = forwarded.split(",")[0]?.trim() || "unknown";
   const secret = registrationRateLimitSecret();
-  const { data, error } = await createAdminSupabase().rpc("register_student", {
+  const ipHash = secureHash(ip, secret);
+  const phoneHash = secureHash(phone, secret);
+  const admin = createAdminSupabase();
+  const { data: attemptId, error: attemptError } = await admin.rpc(
+    "reserve_registration_attempt",
+    {
+      p_slug: slug,
+      p_ip_hash: ipHash,
+      p_phone_hash: phoneHash,
+    },
+  );
+
+  if (attemptError) {
+    if (attemptError.message.includes("RATE_LIMITED")) {
+      return errorResponse(
+        "Too many registration attempts. Please try again shortly.",
+        429,
+      );
+    }
+    if (attemptError.message.includes("INVITATION_UNAVAILABLE")) {
+      return errorResponse("This invitation is no longer active.", 404);
+    }
+    return errorResponse("Unable to complete registration right now.", 500);
+  }
+
+  const { data, error } = await admin.rpc("register_student", {
     p_slug: slug,
     p_name: name,
     p_phone: phone,
     p_domain: domain,
-    p_ip_hash: secureHash(ip, secret),
-    p_phone_hash: secureHash(phone, secret),
+    p_ip_hash: ipHash,
+    p_phone_hash: phoneHash,
+    p_attempt_id: attemptId,
   });
 
   if (error) {

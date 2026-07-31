@@ -7,6 +7,7 @@ import {
   BadgeIndianRupee,
   BriefcaseBusiness,
   Check,
+  CheckCircle2,
   Clock3,
   Presentation,
   Sparkles,
@@ -29,9 +30,11 @@ export function StudentOpportunity({
   ambassador: AmbassadorInvite;
 }) {
   const [domain, setDomain] = useState("");
+  const [registered, setRegistered] = useState(false);
   const formAnchor = useRef<HTMLDivElement>(null);
 
   function chooseDomain(value: string) {
+    if (registered) return;
     setDomain(value);
     formAnchor.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
@@ -86,6 +89,7 @@ export function StudentOpportunity({
             slug={slug}
             domain={domain}
             onDomainChange={setDomain}
+            onRegistered={() => setRegistered(true)}
           />
           <p className="registration-reassurance">
             Official Persevex registration · No lengthy application
@@ -93,38 +97,52 @@ export function StudentOpportunity({
         </div>
       </section>
 
-      <section className="domain-explorer">
-        <div className="domain-section-heading">
+      {registered ? (
+        <section className="post-registration-message">
+          <span><CheckCircle2 size={34} /></span>
           <div>
-            <span className="eyebrow">CHOOSE YOUR DIRECTION</span>
-            <h2>Which domain do you want experience in?</h2>
+            <span className="eyebrow">YOU ARE ALL SET</span>
+            <h2>The Persevex team will contact you soon.</h2>
+            <p>
+              Your registration is complete for <strong>{domain}</strong>. No
+              further action is required right now.
+            </p>
           </div>
-          <p>
-            Select one path now. The Persevex team will contact you with
-            relevant next steps.
-          </p>
-        </div>
-        <div className="domain-card-grid">
-          {internshipDomains.map((item) => (
-            <button
-              type="button"
-              key={item.name}
-              className={`domain-card ${domain === item.name ? "selected" : ""}`}
-              onClick={() => chooseDomain(item.name)}
-            >
-              <span className={`domain-card-visual ${item.visual}`} aria-hidden="true" />
-              <span className="domain-card-copy">
-                <strong>{item.name}</strong>
-                <small>{item.description}</small>
-                <span>
-                  {domain === item.name ? "Selected" : "Choose domain"}
-                  {domain === item.name ? <Check size={15} /> : <ArrowRight size={15} />}
+        </section>
+      ) : (
+        <section className="domain-explorer">
+          <div className="domain-section-heading">
+            <div>
+              <span className="eyebrow">CHOOSE YOUR DIRECTION</span>
+              <h2>Which domain do you want experience in?</h2>
+            </div>
+            <p>
+              Select one path now. The Persevex team will contact you with
+              relevant next steps.
+            </p>
+          </div>
+          <div className="domain-card-grid">
+            {internshipDomains.map((item) => (
+              <button
+                type="button"
+                key={item.name}
+                className={`domain-card ${domain === item.name ? "selected" : ""}`}
+                onClick={() => chooseDomain(item.name)}
+              >
+                <span className={`domain-card-visual ${item.visual}`} aria-hidden="true" />
+                <span className="domain-card-copy">
+                  <strong>{item.name}</strong>
+                  <small>{item.description}</small>
+                  <span>
+                    {domain === item.name ? "Selected" : "Choose domain"}
+                    {domain === item.name ? <Check size={15} /> : <ArrowRight size={15} />}
+                  </span>
                 </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="student-confidence">
         <div><strong>01</strong><span><b>Choose a domain</b><small>Pick the career direction that interests you.</small></span></div>

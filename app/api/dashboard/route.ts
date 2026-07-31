@@ -5,6 +5,7 @@ import { createAdminSupabase } from "@/lib/supabase/admin";
 import type {
   AmbassadorPerformance,
   DashboardData,
+  DashboardSummary,
   Profile,
   Registration,
   SalesPerformance,
@@ -13,9 +14,75 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function optionalUuid(value: string | null) {
+  return value && uuidPattern.test(value) ? value : null;
+}
+
+function rangeStart(value: string | null) {
+  if (!value || value === "all") return null;
+  const daysBack = value === "today" ? 0 : value === "7d" ? 6 : value === "30d" ? 29 : null;
+  if (daysBack === null) return null;
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((item) => item.type === type)?.value);
+  const indiaMidnightUtc =
+    Date.UTC(part("year"), part("month") - 1, part("day")) -
+    330 * 60 * 1000;
+  return new Date(indiaMidnightUtc - daysBack * 86_400_000).toISOString();
+}
+
+function safeSearch(value: string | null) {
+  return (value ?? "")
+    .trim()
+    .slice(0, 100)
+    .replace(/[^\p{L}\p{N}\s@+_-]/gu, "");
+}
+
+const emptySummary: DashboardSummary = {
+  registrationRowCount: 0,
+  registrationCount: 0,
+  todayRegistrationCount: 0,
+  convertedCount: 0,
+  groupsRepresentedCount: 0,
+  ambassadorCount: 0,
+  activeAmbassadorCount: 0,
+  qualifiedAmbassadorCount: 0,
+  groupCreatorCount: 0,
+  daily: [],
+  groupRankings: [],
+};
+
+export async function GET(request: Request) {
   const user = await requireApiProfile();
   if (!user) return errorResponse("Unauthorized.", 401);
+
+  const params = new URL(request.url).searchParams;
+  const requestedTeamId = optionalUuid(params.get("teamId"));
+  const requestedSalesId = optionalUuid(params.get("memberId"));
+  const ambassadorId = optionalUuid(params.get("groupId"));
+  const startAt = rangeStart(params.get("dateRange"));
+  const search = safeSearch(params.get("search"));
+  const requestedPage = Math.max(1, Number(params.get("page")) || 1);
+  const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize")) || 50));
+
+  let teamId = requestedTeamId;
+  let salesId = requestedSalesId;
+  if (user.role === "team_lead") {
+    if (!user.team_id) return errorResponse("No team is assigned.", 409);
+    teamId = user.team_id;
+  } else if (user.role === "sales") {
+    teamId = user.team_id;
+    salesId = user.id;
+  }
 
   const admin = createAdminSupabase();
   await admin.rpc("anonymize_expired_registrations");
@@ -40,19 +107,13 @@ export async function GET() {
     .select(
       "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)",
     )
-    .order("created_at", { ascending: false })
-    .limit(1000);
+    .order("created_at", { ascending: false });
 
   if (user.role === "team_lead") {
-    if (!user.team_id) return errorResponse("No team is assigned.", 409);
     teamsQuery = teamsQuery.eq("id", user.team_id);
     employeesQuery = employeesQuery.eq("team_id", user.team_id);
     salesQuery = salesQuery.eq("team_id", user.team_id);
     ambassadorsQuery = ambassadorsQuery.eq("team_id", user.team_id);
-    registrationsQuery = registrationsQuery.eq(
-      "credited_team_id",
-      user.team_id,
-    );
   } else if (user.role === "sales") {
     teamsQuery = user.team_id
       ? teamsQuery.eq("id", user.team_id)
@@ -60,21 +121,41 @@ export async function GET() {
     employeesQuery = employeesQuery.eq("id", user.id);
     salesQuery = salesQuery.eq("id", user.id);
     ambassadorsQuery = ambassadorsQuery.eq("sales_id", user.id);
-    registrationsQuery = registrationsQuery.eq("credited_sales_id", user.id);
+  } else if (teamId) {
+    employeesQuery = employeesQuery.eq("team_id", teamId);
+    salesQuery = salesQuery.eq("team_id", teamId);
+    ambassadorsQuery = ambassadorsQuery.eq("team_id", teamId);
   }
 
-  const [teams, employees, sales, ambassadors, registrations, settings] =
+  if (teamId) registrationsQuery = registrationsQuery.eq("credited_team_id", teamId);
+  if (salesId) registrationsQuery = registrationsQuery.eq("credited_sales_id", salesId);
+  if (ambassadorId) registrationsQuery = registrationsQuery.eq("ambassador_id", ambassadorId);
+  if (startAt) registrationsQuery = registrationsQuery.gte("created_at", startAt);
+  if (search) {
+    const pattern = `%${search}%`;
+    registrationsQuery = registrationsQuery.or(
+      `name.ilike.${pattern},phone.ilike.${pattern},preferred_domain.ilike.${pattern}`,
+    );
+  }
+
+  const [teams, employees, sales, ambassadors, settings, summaryResult] =
     await Promise.all([
       teamsQuery,
       employeesQuery,
       salesQuery,
       ambassadorsQuery,
-      registrationsQuery,
       admin
         .from("app_settings")
         .select("value")
         .eq("key", "default_ambassador_target")
         .maybeSingle(),
+      admin.rpc("dashboard_summary", {
+        p_team_id: teamId,
+        p_sales_id: salesId,
+        p_ambassador_id: ambassadorId,
+        p_start_at: startAt,
+        p_search: search || null,
+      }),
     ]);
 
   const firstError = [
@@ -82,10 +163,22 @@ export async function GET() {
     employees.error,
     sales.error,
     ambassadors.error,
-    registrations.error,
     settings.error,
+    summaryResult.error,
   ].find(Boolean);
   if (firstError) return errorResponse("Unable to load dashboard data.", 500);
+
+  const summary = (summaryResult.data ?? emptySummary) as DashboardSummary;
+  const totalPages = Math.max(1, Math.ceil(summary.registrationRowCount / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const offset = (page - 1) * pageSize;
+  const registrations = await registrationsQuery.range(
+    offset,
+    offset + pageSize - 1,
+  );
+  if (registrations.error) {
+    return errorResponse("Unable to load registrations.", 500);
+  }
 
   const payload: DashboardData = {
     user,
@@ -95,6 +188,13 @@ export async function GET() {
     salesPerformance: (sales.data ?? []) as SalesPerformance[],
     ambassadors: (ambassadors.data ?? []) as AmbassadorPerformance[],
     registrations: (registrations.data ?? []) as unknown as Registration[],
+    summary,
+    pagination: {
+      page,
+      pageSize,
+      totalRows: summary.registrationRowCount,
+      totalPages,
+    },
   };
 
   return NextResponse.json(payload, {

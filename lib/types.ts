@@ -78,6 +78,30 @@ export type Registration = {
   ambassador?: { name: string; college: string } | null;
 };
 
+export type DashboardSummary = {
+  registrationRowCount: number;
+  registrationCount: number;
+  todayRegistrationCount: number;
+  convertedCount: number;
+  groupsRepresentedCount: number;
+  ambassadorCount: number;
+  activeAmbassadorCount: number;
+  qualifiedAmbassadorCount: number;
+  groupCreatorCount: number;
+  daily: Array<{ date: string; count: number }>;
+  groupRankings: Array<{
+    ambassadorId: string;
+    registrationCount: number;
+  }>;
+};
+
+export type DashboardPagination = {
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  totalPages: number;
+};
+
 export type DashboardData = {
   user: Profile;
   defaultTarget: number;
@@ -86,4 +110,6 @@ export type DashboardData = {
   salesPerformance: SalesPerformance[];
   ambassadors: AmbassadorPerformance[];
   registrations: Registration[];
+  summary: DashboardSummary;
+  pagination: DashboardPagination;
 };

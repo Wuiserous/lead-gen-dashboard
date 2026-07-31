@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Award,
   BarChart3,
@@ -107,15 +107,26 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [live, setLive] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [teamFilter, setTeamFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [memberFilter, setMemberFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
+  const [page, setPage] = useState(1);
+  const loadedOnce = useRef(false);
 
   const load = useCallback(async (quiet = false) => {
-    if (quiet) setRefreshing(true);
+    if (quiet || loadedOnce.current) setRefreshing(true);
     else setLoading(true);
-    const response = await fetch("/api/dashboard", { cache: "no-store" });
+    const params = new URLSearchParams({ page: String(page), pageSize: "50" });
+    if (teamFilter !== "all") params.set("teamId", teamFilter);
+    if (memberFilter !== "all") params.set("memberId", memberFilter);
+    if (groupFilter !== "all") params.set("groupId", groupFilter);
+    if (dateRange !== "all") params.set("dateRange", dateRange);
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    const response = await fetch(`/api/dashboard?${params.toString()}`, {
+      cache: "no-store",
+    });
     if (!response.ok) {
       if (response.status === 401) {
         router.replace("/");
@@ -138,10 +149,20 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       return;
     }
     setData(result);
+    setPage(result.pagination.page);
+    loadedOnce.current = true;
     setError("");
     setLoading(false);
     setRefreshing(false);
-  }, [expectedRole, router]);
+  }, [dateRange, debouncedSearch, expectedRole, groupFilter, memberFilter, page, router, teamFilter]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void load(), 0);
@@ -149,16 +170,20 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   }, [load]);
 
   useEffect(() => {
-    if (!data?.user) return;
+    const userId = data?.user.id;
+    const userRole = data?.user.role;
+    const userTeamId = data?.user.team_id;
+    if (!userId || !userRole) return;
     const supabase = createBrowserSupabase();
+    let refreshTimer: number | undefined;
     const filter =
-      data.user.role === "sales"
-        ? `sales_id=eq.${data.user.id}`
-        : data.user.role === "team_lead" && data.user.team_id
-          ? `team_id=eq.${data.user.team_id}`
+      userRole === "sales"
+        ? `sales_id=eq.${userId}`
+        : userRole === "team_lead" && userTeamId
+          ? `team_id=eq.${userTeamId}`
           : undefined;
     const channel = supabase
-      .channel(`dashboard-${data.user.id}`)
+      .channel(`dashboard-${userId}`)
       .on(
         "postgres_changes",
         {
@@ -167,13 +192,17 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
           table: "activity_events",
           ...(filter ? { filter } : {}),
         },
-        () => void load(true),
+        () => {
+          if (refreshTimer) window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(() => void load(true), 700);
+        },
       )
       .subscribe((status: string) => setLive(status === "SUBSCRIBED"));
     return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       void supabase.removeChannel(channel);
     };
-  }, [data?.user, load]);
+  }, [data?.user.id, data?.user.role, data?.user.team_id, load]);
 
   async function logout() {
     await createBrowserSupabase().auth.signOut();
@@ -331,7 +360,6 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
           {tab === "overview" && (
             <Overview
               data={data}
-              registrations={filteredRegistrations}
               ambassadors={filteredAmbassadors}
               filters={
                 <ReportingFilters
@@ -340,17 +368,25 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                   groupFilter={groupFilter}
                   memberFilter={memberFilter}
                   dateRange={dateRange}
-                  onGroupChange={setGroupFilter}
+                  onGroupChange={(value) => {
+                    setGroupFilter(value);
+                    setPage(1);
+                  }}
                   onTeamChange={(value) => {
                     setTeamFilter(value);
                     setMemberFilter("all");
                     setGroupFilter("all");
+                    setPage(1);
                   }}
                   onMemberChange={(value) => {
                     setMemberFilter(value);
                     setGroupFilter("all");
+                    setPage(1);
                   }}
-                  onDateRangeChange={setDateRange}
+                  onDateRangeChange={(value) => {
+                    setDateRange(value);
+                    setPage(1);
+                  }}
                 />
               }
               onRefresh={() => void load(true)}
@@ -364,6 +400,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 setMemberFilter("all");
                 setGroupFilter("all");
                 setDateRange("all");
+                setPage(1);
                 setTab("overview");
               }}
               onRefresh={() => void load(true)}
@@ -377,6 +414,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 setTeamFilter(employee?.team_id ?? "all");
                 setMemberFilter(id);
                 setGroupFilter("all");
+                setPage(1);
                 setTab("ambassadors");
               }}
               onRefresh={() => void load(true)}
@@ -393,22 +431,31 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                   groupFilter={groupFilter}
                   memberFilter={memberFilter}
                   dateRange={dateRange}
-                  onGroupChange={setGroupFilter}
+                  onGroupChange={(value) => {
+                    setGroupFilter(value);
+                    setPage(1);
+                  }}
                   onTeamChange={(value) => {
                     setTeamFilter(value);
                     setMemberFilter("all");
                     setGroupFilter("all");
+                    setPage(1);
                   }}
                   onMemberChange={(value) => {
                     setMemberFilter(value);
                     setGroupFilter("all");
+                    setPage(1);
                   }}
-                  onDateRangeChange={setDateRange}
+                  onDateRangeChange={(value) => {
+                    setDateRange(value);
+                    setPage(1);
+                  }}
                   hideDate
                 />
               }
               onViewGroup={(id) => {
                 setGroupFilter(id);
+                setPage(1);
                 setTab("leads");
               }}
               onRefresh={() => void load(true)}
@@ -419,14 +466,14 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               <div className="table-toolbar">
                 <div>
                   <h2>Student registrations</h2>
-                  <p>{filteredRegistrations.length} registrations in this view</p>
+                  <p>{data.pagination.totalRows} registrations in this view</p>
                 </div>
                 <label className="search-box">
                   <Search size={17} />
                   <input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search student, domain, or group"
+                    placeholder="Search student, phone, or domain"
                   />
                 </label>
               </div>
@@ -436,23 +483,37 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 groupFilter={groupFilter}
                 memberFilter={memberFilter}
                 dateRange={dateRange}
-                onGroupChange={setGroupFilter}
+                onGroupChange={(value) => {
+                  setGroupFilter(value);
+                  setPage(1);
+                }}
                 onTeamChange={(value) => {
                   setTeamFilter(value);
                   setMemberFilter("all");
                   setGroupFilter("all");
+                  setPage(1);
                 }}
                 onMemberChange={(value) => {
                   setMemberFilter(value);
                   setGroupFilter("all");
+                  setPage(1);
                 }}
-                onDateRangeChange={setDateRange}
+                onDateRangeChange={(value) => {
+                  setDateRange(value);
+                  setPage(1);
+                }}
               />
-              <LeadViewSummary registrations={filteredRegistrations} />
+              <LeadViewSummary summary={data.summary} />
               <LeadsTable
                 registrations={filteredRegistrations}
                 canDelete={data.user.role !== "sales"}
                 onRefresh={() => void load(true)}
+              />
+              <Pagination
+                page={data.pagination.page}
+                totalPages={data.pagination.totalPages}
+                totalRows={data.pagination.totalRows}
+                onPageChange={setPage}
               />
             </section>
           )}
@@ -514,44 +575,34 @@ function pageTitle(tab: Tab, role: AppRole) {
 
 function Overview({
   data,
-  registrations,
   ambassadors,
   filters,
   onRefresh,
 }: {
   data: DashboardData;
-  registrations: Registration[];
   ambassadors: DashboardData["ambassadors"];
   filters: React.ReactNode;
   onRefresh: () => void;
 }) {
-  const totalRegistrations = registrations.filter(
-    (item) => item.status !== "invalid",
-  ).length;
-  const qualified = ambassadors.filter((item) => item.qualified).length;
-  const activeAmbassadors = ambassadors.filter(
-    (item) => item.status === "active",
-  ).length;
-
   return (
     <section className="overview-stack">
       {filters}
       <div className="metric-grid">
         <MetricCard
           label="Registrations"
-          value={totalRegistrations}
+          value={data.summary.registrationCount}
           detail="Valid registrations in your scope"
           icon={<Clipboard size={21} />}
         />
         <MetricCard
           label="Campus Ambassadors"
-          value={ambassadors.length}
-          detail={`${activeAmbassadors} currently active`}
+          value={data.summary.ambassadorCount}
+          detail={`${data.summary.activeAmbassadorCount} currently active`}
           icon={<Users size={21} />}
         />
         <MetricCard
           label="Qualified"
-          value={qualified}
+          value={data.summary.qualifiedAmbassadorCount}
           detail={`Reached their individual target`}
           icon={<Award size={21} />}
         />
@@ -559,7 +610,7 @@ function Overview({
           label={data.user.role === "admin" ? "Group creators" : "Team target"}
           value={
             data.user.role === "admin"
-              ? new Set(ambassadors.map((item) => item.sales_id)).size
+              ? data.summary.groupCreatorCount
               : data.defaultTarget
           }
           detail={
@@ -628,7 +679,7 @@ function Overview({
           </div>
         )}
       </div>
-      <ReportingInsights data={data} registrations={registrations} ambassadors={ambassadors} />
+      <ReportingInsights data={data} ambassadors={ambassadors} />
     </section>
   );
 }
@@ -728,58 +779,76 @@ function ReportingFilters({
   );
 }
 
-function LeadViewSummary({ registrations }: { registrations: Registration[] }) {
-  const valid = registrations.filter((item) => item.status !== "invalid");
-  const today = valid.filter((item) => inDateRange(item.created_at, "today")).length;
-  const converted = valid.filter((item) => item.status === "converted").length;
-  const groups = new Set(valid.map((item) => item.ambassador_id)).size;
+function LeadViewSummary({ summary }: { summary: DashboardData["summary"] }) {
   return (
     <div className="lead-view-summary">
-      <span><strong>{valid.length}</strong> Valid registrations</span>
-      <span><strong>{today}</strong> Today</span>
-      <span><strong>{groups}</strong> Groups represented</span>
-      <span><strong>{converted}</strong> Converted</span>
+      <span><strong>{summary.registrationCount}</strong> Valid registrations</span>
+      <span><strong>{summary.todayRegistrationCount}</strong> Today</span>
+      <span><strong>{summary.groupsRepresentedCount}</strong> Groups represented</span>
+      <span><strong>{summary.convertedCount}</strong> Converted</span>
+    </div>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  totalRows,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  totalRows: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalRows <= 50) return null;
+  return (
+    <div className="pagination-bar">
+      <span>
+        Page <strong>{page}</strong> of <strong>{totalPages}</strong>
+      </span>
+      <div>
+        <button
+          className="secondary-button"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+        >
+          Previous
+        </button>
+        <button
+          className="secondary-button"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+        >
+          Next
+        </button>
+      </div>
     </div>
   );
 }
 
 function ReportingInsights({
   data,
-  registrations,
   ambassadors,
 }: {
   data: DashboardData;
-  registrations: Registration[];
   ambassadors: DashboardData["ambassadors"];
 }) {
-  const valid = registrations.filter((item) => item.status !== "invalid");
   const creatorNames = new Map(
     data.employees.map((employee) => [employee.id, employee.full_name]),
   );
-  const days = Array.from({ length: 14 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (13 - index));
-    date.setHours(0, 0, 0, 0);
-    const next = new Date(date);
-    next.setDate(date.getDate() + 1);
-    return {
-      date,
-      count: valid.filter((item) => {
-        const created = new Date(item.created_at);
-        return created >= date && created < next;
-      }).length,
-    };
-  });
+  const days = data.summary.daily.map((item) => ({
+    date: new Date(`${item.date}T00:00:00+05:30`),
+    count: item.count,
+  }));
   const max = Math.max(1, ...days.map((day) => day.count));
-  const groupRows = ambassadors
-    .map((ambassador) => ({
-      ...ambassador,
-      visibleCount: valid.filter(
-        (item) => item.ambassador_id === ambassador.id,
-      ).length,
-    }))
-    .sort((a, b) => b.visibleCount - a.visibleCount)
-    .slice(0, 8);
+  const ambassadorsById = new Map(ambassadors.map((item) => [item.id, item]));
+  const groupRows = data.summary.groupRankings.flatMap((ranking) => {
+    const ambassador = ambassadorsById.get(ranking.ambassadorId);
+    return ambassador
+      ? [{ ...ambassador, visibleCount: ranking.registrationCount }]
+      : [];
+  });
 
   return (
     <div className="insights-grid">
