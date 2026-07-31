@@ -881,6 +881,20 @@ function TeamsView({
     }
     onRefresh();
   }
+
+  async function removeTeam(id: string, name: string) {
+    const confirmed = window.confirm(
+      `Permanently delete the ${name} team? Delete its employees and groups first. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    const response = await fetch(`/api/teams/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      window.alert(await readError(response));
+      return;
+    }
+    onRefresh();
+  }
   return (
     <section>
       <div className="table-toolbar">
@@ -920,6 +934,12 @@ function TeamsView({
                 >
                   {team.active ? "Deactivate team" : "Reactivate team"}
                 </button>
+                <button
+                  className="danger-button"
+                  onClick={() => void removeTeam(team.id, team.name)}
+                >
+                  <Trash2 size={16} /> Delete team
+                </button>
               </div>
             </article>
           );
@@ -948,6 +968,22 @@ function EmployeesView({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      window.alert(await readError(response));
+      return;
+    }
+    onRefresh();
+  }
+
+  async function removeEmployee(id: string, name: string) {
+    const confirmed = window.confirm(
+      `Permanently delete ${name}'s employee account? Delete their groups first. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    const response = await fetch(`/api/employees/${id}`, {
+      method: "DELETE",
     });
     if (!response.ok) {
       window.alert(await readError(response));
@@ -1016,14 +1052,25 @@ function EmployeesView({
                     </button>
                   )}
                 {data.user.role === "admin" && employee.role !== "admin" && (
-                  <button
-                    className="text-button danger-text"
-                    onClick={() =>
-                      void patchEmployee(employee.id, { active: !employee.active })
-                    }
-                  >
-                    {employee.active ? "Suspend" : "Reactivate"}
-                  </button>
+                  <>
+                    <button
+                      className="text-button danger-text"
+                      onClick={() =>
+                        void patchEmployee(employee.id, { active: !employee.active })
+                      }
+                    >
+                      {employee.active ? "Suspend" : "Reactivate"}
+                    </button>
+                    <button
+                      className="icon-button danger-icon"
+                      title="Delete employee"
+                      onClick={() =>
+                        void removeEmployee(employee.id, employee.full_name)
+                      }
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </>
                 )}
               </div>
             </div>

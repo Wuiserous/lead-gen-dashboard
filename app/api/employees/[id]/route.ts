@@ -63,3 +63,51 @@ export async function PATCH(
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  if (!assertSameOrigin(request)) return errorResponse("Invalid request.", 403);
+  const actor = await requireApiProfile(["admin"]);
+  if (!actor) return errorResponse("Unauthorized.", 401);
+
+  const { id } = await context.params;
+  if (id === actor.id) {
+    return errorResponse("You cannot delete your own Admin account.", 409);
+  }
+
+  const admin = createAdminSupabase();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("id,role")
+    .eq("id", id)
+    .maybeSingle();
+  if (!profile || profile.role === "admin") {
+    return errorResponse("Employee not found.", 404);
+  }
+
+  const { count: ambassadorCount } = await admin
+    .from("ambassadors")
+    .select("id", { count: "exact", head: true })
+    .eq("sales_id", id);
+  if (ambassadorCount) {
+    return errorResponse(
+      "Delete this employee's groups before deleting their account.",
+      409,
+    );
+  }
+
+  const { error } = await admin.auth.admin.deleteUser(id);
+  if (error) return errorResponse("Unable to delete the employee.", 500);
+
+  await admin.from("audit_events").insert({
+    actor_id: actor.id,
+    action: "employee_deleted",
+    entity_type: "employee",
+    entity_id: id,
+    details: { role: profile.role },
+  });
+
+  return NextResponse.json({ ok: true });
+}

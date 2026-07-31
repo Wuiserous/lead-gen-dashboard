@@ -1642,11 +1642,31 @@ p {
 }
 
 .team-card-actions .primary-button,
-.team-card-actions .team-toggle {
+.team-card-actions .team-toggle,
+.team-card-actions .danger-button {
   width: 100%;
   min-height: 39px;
   margin-top: 0;
   justify-content: center;
+}
+
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(197, 57, 57, 0.28);
+  border-radius: 8px;
+  background: rgba(197, 57, 57, 0.06);
+  color: #b52f3e;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.danger-button:hover {
+  border-color: #b52f3e;
+  background: #b52f3e;
+  color: #fff;
 }
 
 .data-table {
