@@ -4,6 +4,22 @@ import { useState } from "react";
 import { ArrowRight, CheckCircle2, ChevronDown } from "lucide-react";
 import { internshipDomains } from "@/lib/domains";
 
+function nationalPhoneDigits(value: string) {
+  let digits = value.replace(/\D/g, "");
+
+  if (digits.length > 10 && digits.startsWith("0091")) {
+    digits = digits.slice(4);
+  } else if (digits.length > 10 && digits.startsWith("91")) {
+    digits = digits.slice(2);
+  }
+
+  while (digits.length > 10 && digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+
+  return digits.slice(0, 10);
+}
+
 export function StudentRegistrationForm({
   slug,
   domain,
@@ -96,13 +112,13 @@ export function StudentRegistrationForm({
         <span className="phone-field">
           <span>+91</span>
           <input
+            name="phone"
             type="tel"
             inputMode="numeric"
-            autoComplete="tel"
+            autoComplete="tel-national"
+            enterKeyHint="done"
             value={phone}
-            onChange={(event) =>
-              setPhone(event.target.value.replace(/\D/g, "").slice(0, 10))
-            }
+            onChange={(event) => setPhone(nationalPhoneDigits(event.target.value))}
             placeholder="10-digit mobile number"
             pattern="[6-9][0-9]{9}"
             required
