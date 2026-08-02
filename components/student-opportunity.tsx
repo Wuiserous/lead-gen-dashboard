@@ -28,6 +28,16 @@ type AmbassadorInvite = {
 
 const featuredDomainCount = 8;
 
+const industryCompanies = [
+  { name: "Google", logo: "/industry/google.svg" },
+  { name: "Microsoft", logo: "/industry/microsoft.svg" },
+  { name: "Amazon", logo: "/industry/amazon.svg" },
+  { name: "Meta", logo: "/industry/meta.svg" },
+  { name: "Apple", logo: "/industry/apple.svg" },
+  { name: "Netflix", logo: "/industry/netflix.svg" },
+  { name: "IBM", logo: "/industry/ibm.svg" },
+];
+
 export function StudentOpportunity({
   slug,
   ambassador,
@@ -57,23 +67,43 @@ export function StudentOpportunity({
   return (
     <main className="student-page student-page-v2">
       <header className="student-header student-header-v2">
-        <Image
-          src="/persevex-logo.png"
-          alt="Persevex"
-          width={865}
-          height={375}
-          className="persevex-logo"
-          priority
-        />
-        <span className="official-opportunity"><ShieldCheck size={15} /> Official student opportunity</span>
-        {!registered && (
-          <button type="button" className="header-register-link" onClick={scrollToForm}>
-            Register now <ArrowRight size={15} />
-          </button>
-        )}
+        <div className="student-nav-primary">
+          <Image
+            src="/persevex-logo.png"
+            alt="Persevex"
+            width={865}
+            height={375}
+            className="persevex-logo"
+            priority
+          />
+          <span className="official-opportunity"><ShieldCheck size={15} /> Official student opportunity</span>
+          {!registered && (
+            <button type="button" className="header-register-link" onClick={scrollToForm}>
+              Register now <ArrowRight size={15} />
+            </button>
+          )}
+        </div>
+        <div className="nav-industry-strip" aria-label="Industry career references">
+          <span className="nav-industry-label">Career relevance</span>
+          <div className="nav-industry-logos">
+            {industryCompanies.map((company) => (
+              <span className="nav-industry-logo" key={company.name} title={company.name}>
+                <Image src={company.logo} alt={company.name} width={82} height={28} />
+              </span>
+            ))}
+          </div>
+          <span className="nav-industry-note">Industry examples · no affiliation</span>
+        </div>
       </header>
 
       <section className="conversion-hero conversion-hero-v2">
+        <div className="hero-industry-watermarks" aria-hidden="true">
+          {industryCompanies.map((company) => (
+            <span key={company.name}>
+              <Image src={company.logo} alt="" width={96} height={36} />
+            </span>
+          ))}
+        </div>
         <div className="conversion-copy conversion-copy-v2">
           <div className="opportunity-kicker">
             <Sparkles size={15} /> Persevex internship program · Applications open
@@ -264,6 +294,10 @@ export function StudentOpportunity({
           className="persevex-logo"
         />
         <p>Official Persevex student registration</p>
+        <small className="industry-trademark-note">
+          Amazon and the Amazon logo are trademarks of Amazon.com, Inc. or its affiliates.
+          Other marks belong to their respective owners. Industry reference only; no affiliation or hiring guarantee.
+        </small>
       </footer>
     </main>
   );

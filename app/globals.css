@@ -2660,9 +2660,18 @@ p {
   position: sticky;
   top: 0;
   z-index: 20;
-  height: 72px;
-  gap: 18px;
+  height: auto;
+  display: block;
+  padding: 0;
   border-bottom-color: rgba(7, 26, 60, 0.1);
+}
+
+.student-nav-primary {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 max(24px, calc((100vw - var(--student-max)) / 2));
 }
 
 .student-header-v2 .persevex-logo,
@@ -2693,8 +2702,74 @@ p {
   font-weight: 850;
 }
 
+.nav-industry-strip {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  overflow: hidden;
+  border-top: 1px solid #e7ebf1;
+  padding: 5px 18px;
+  background: linear-gradient(90deg, #f9fafc, #fff, #f9fafc);
+}
+
+.student-header-v2 .nav-industry-strip span {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.nav-industry-label,
+.nav-industry-note {
+  flex: 0 0 auto;
+  color: #7a8495;
+  font-size: 0.5rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.nav-industry-logos {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.nav-industry-logo {
+  width: 67px;
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e7ef;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #fff;
+  cursor: default;
+  user-select: none;
+}
+
+.student-header-v2 .nav-industry-strip .nav-industry-logo {
+  border: 1px solid #e2e7ef;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #fff;
+}
+
+.nav-industry-logo img {
+  width: 100%;
+  height: 14px !important;
+  object-fit: contain;
+  filter: grayscale(1);
+  opacity: 0.72;
+}
+
 .conversion-hero-v2 {
-  min-height: min(790px, calc(100svh - 72px));
+  min-height: min(790px, calc(100svh - 102px));
   position: relative;
   isolation: isolate;
   align-items: center;
@@ -2711,6 +2786,43 @@ p {
 
 .conversion-hero-v2 > * {
   min-width: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.hero-industry-watermarks {
+  width: min(500px, 42vw);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 15px;
+  position: absolute;
+  top: 10%;
+  right: 2%;
+  bottom: auto;
+  left: auto;
+  z-index: 0;
+  transform: rotate(-7deg);
+  opacity: 0.11;
+  pointer-events: none;
+}
+
+.hero-industry-watermarks span {
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 18px;
+  padding: 17px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.hero-industry-watermarks img {
+  width: 100%;
+  height: 30px !important;
+  object-fit: contain;
+  filter: grayscale(1) brightness(4);
 }
 
 .conversion-hero-v2::before {
@@ -3135,6 +3247,14 @@ p {
   background: #fff;
 }
 
+.industry-trademark-note {
+  max-width: 440px;
+  color: #929baa;
+  font-size: 0.48rem;
+  line-height: 1.45;
+  text-align: right;
+}
+
 @media (max-width: 1080px) {
   .conversion-hero-v2 {
     min-height: auto;
@@ -3176,6 +3296,23 @@ p {
     min-width: 0;
   }
 
+  .nav-industry-note {
+    display: none;
+  }
+
+  .hero-industry-watermarks {
+    width: 340px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    top: 18%;
+    right: -70px;
+    gap: 10px;
+    opacity: 0.08;
+  }
+
+  .hero-industry-watermarks span {
+    height: 62px;
+  }
+
   .recognition-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3195,8 +3332,14 @@ p {
   }
 
   .student-header-v2 {
-    height: 62px;
-    padding: 0 16px;
+    height: auto;
+    padding: 0;
+  }
+
+  .student-nav-primary {
+    height: 58px;
+    gap: 10px;
+    padding: 0 14px;
   }
 
   .student-header-v2 .persevex-logo {
@@ -3221,6 +3364,50 @@ p {
     min-height: 34px;
     padding: 0 11px;
     font-size: 0.66rem;
+  }
+
+  .nav-industry-strip {
+    min-height: 45px;
+    position: relative;
+    gap: 6px;
+    padding: 5px 10px 14px;
+  }
+
+  .nav-industry-label {
+    display: none;
+  }
+
+  .student-header-v2 .nav-industry-note {
+    display: block;
+    position: absolute;
+    right: 0;
+    bottom: 2px;
+    left: 0;
+    color: #8a93a2;
+    font-size: 0.38rem;
+    letter-spacing: 0.07em;
+    text-align: center;
+  }
+
+  .nav-industry-logos {
+    width: 100%;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .nav-industry-logo {
+    width: 44px;
+    height: 24px;
+    padding: 5px 7px;
+  }
+
+  .student-header-v2 .nav-industry-strip .nav-industry-logo {
+    display: inline-flex;
+    padding: 5px 7px;
+  }
+
+  .nav-industry-logo img {
+    height: 12px !important;
   }
 
   .conversion-hero-v2 {
@@ -3402,6 +3589,11 @@ p {
   .student-footer-v2 {
     min-height: 92px;
     padding-bottom: 22px;
+  }
+
+  .industry-trademark-note {
+    max-width: 310px;
+    text-align: center;
   }
 
 }
