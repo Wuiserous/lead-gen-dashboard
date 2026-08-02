@@ -87,7 +87,7 @@ export function StudentOpportunity({
 
     function handleScroll() {
       const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-      if (scrollable <= 0 || Date.now() - startedAt < 5000) return;
+      if (scrollable <= 0 || Date.now() - startedAt < 9000) return;
       if (window.scrollY / scrollable >= 0.4) triggerPopup();
     }
 
@@ -95,7 +95,7 @@ export function StudentOpportunity({
       if (event.clientY <= 0 && Date.now() - startedAt >= 8000) triggerPopup();
     }
 
-    const timer = window.setTimeout(triggerPopup, 5000);
+    const timer = window.setTimeout(triggerPopup, 9000);
     window.addEventListener("scroll", handleScroll, { passive: true });
     document.addEventListener("mouseout", handleExitIntent);
 
