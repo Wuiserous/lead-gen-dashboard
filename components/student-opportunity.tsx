@@ -109,7 +109,7 @@ export function StudentOpportunity({
       if (event.clientY <= 0 && Date.now() - startedAt >= 8000) triggerPopup();
     }
 
-    const timer = window.setTimeout(triggerPopup, 22000);
+    const timer = window.setTimeout(triggerPopup, 8000);
     window.addEventListener("scroll", handleScroll, { passive: true });
     document.addEventListener("mouseout", handleExitIntent);
 
