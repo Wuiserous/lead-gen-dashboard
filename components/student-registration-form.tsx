@@ -42,19 +42,24 @@ export function StudentRegistrationForm({
     event.preventDefault();
     setError("");
     setLoading(true);
-    const response = await fetch("/api/public/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slug, name, phone, domain, website }),
-    });
-    const result = await response.json();
-    setLoading(false);
-    if (!response.ok) {
-      setError(result.error ?? "Unable to register.");
-      return;
+    try {
+      const response = await fetch("/api/public/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, name, phone, domain, website }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(result.error ?? "Unable to register. Please try again.");
+        return;
+      }
+      setDone(true);
+      onRegistered();
+    } catch {
+      setError("Unable to register. Check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-    setDone(true);
-    onRegistered();
   }
 
   if (done) {
@@ -73,9 +78,9 @@ export function StudentRegistrationForm({
 
   return (
     <form className="registration-card" onSubmit={submit}>
-      <span className="eyebrow">YOUR INTERNSHIP PATH</span>
-      <h2>Reserve your opportunity</h2>
-      <p>Choose a domain and register in less than a minute.</p>
+      <span className="eyebrow">ONE STEP · NO LONG APPLICATION</span>
+      <h2>Choose your internship path</h2>
+      <p>Select a domain. Share your name and mobile. Done.</p>
       <label>
         Preferred internship domain
         <span className="domain-select-field">
@@ -137,7 +142,7 @@ export function StudentRegistrationForm({
       </label>
       {error && <div className="alert error">{error}</div>}
       <button className="gold-button wide" type="submit" disabled={loading}>
-        {loading ? "Registering..." : "Register for this domain"}
+        {loading ? "Registering..." : "Register my interest"}
         {!loading && <ArrowRight size={18} />}
       </button>
     </form>
