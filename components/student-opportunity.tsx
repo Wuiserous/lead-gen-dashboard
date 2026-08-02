@@ -76,18 +76,44 @@ export function StudentOpportunity({
       <section className="conversion-hero conversion-hero-v2">
         <div className="conversion-copy conversion-copy-v2">
           <div className="opportunity-kicker">
-            <Sparkles size={15} /> Internship applications open
+            <Sparkles size={15} /> Persevex internship program · Applications open
           </div>
-          <h1>Turn your degree into <em>work you can show.</em></h1>
+          <h1>Internships in 23 domains. <em>Pick yours.</em></h1>
           <p className="hero-lead">
-            Choose a domain, work on practical projects, and build experience
-            that belongs on your resume.
+            Open to students at every stage of college. Choose your field, work
+            on practical projects, and learn with live mentors.
           </p>
+
+          <div className="hero-trust-block">
+            <span className="hero-trust-title"><ShieldCheck size={14} /> Collaboration &amp; recognition</span>
+            <div className="hero-trust-logos">
+              <span className="hero-trust-logo hero-alcheringa-logo">
+                <small>TRAINING COLLABORATION</small>
+                <Image src="/alcheringa-iit-guwahati.png" alt="Alcheringa, IIT Guwahati 2026" width={960} height={334} />
+              </span>
+              <span className="hero-trust-logo">
+                <small>TRAINING ECOSYSTEM</small>
+                <Image src="/skill-india.png" alt="Skill India" width={550} height={260} />
+              </span>
+              <span className="hero-trust-logo">
+                <small>TRAINING ECOSYSTEM</small>
+                <Image src="/nsdc.png" alt="National Skill Development Corporation" width={650} height={240} />
+              </span>
+              <span className="hero-trust-logo hero-startup-logo">
+                <small>DPIIT RECOGNISED</small>
+                <strong><i>#startup</i>india</strong>
+              </span>
+              <span className="hero-trust-logo hero-iso-logo">
+                <small>ISO CERTIFIED</small>
+                <strong>ISO <b>9001:2015</b></strong>
+              </span>
+            </div>
+          </div>
 
           <div className="hero-proof-grid hero-proof-grid-v2">
             <div>
               <BriefcaseBusiness size={20} />
-              <span><strong>Internship experience</strong><small>Across 23 career domains</small></span>
+              <span><strong>23 internship domains</strong><small>Choose the field you want</small></span>
             </div>
             <div className="stipend-proof">
               <BadgeIndianRupee size={20} />

@@ -2709,6 +2709,10 @@ p {
     linear-gradient(135deg, #061735 0%, #0a214a 55%, #071a3c 100%);
 }
 
+.conversion-hero-v2 > * {
+  min-width: 0;
+}
+
 .conversion-hero-v2::before {
   content: "";
   width: 480px;
@@ -2737,10 +2741,92 @@ p {
 
 .conversion-copy-v2 .hero-lead {
   max-width: 630px;
-  margin-bottom: 22px;
+  margin-bottom: 17px;
   color: #d2dced;
   font-size: clamp(1rem, 1.45vw, 1.14rem);
   line-height: 1.55;
+}
+
+.hero-trust-block {
+  max-width: 720px;
+  margin-bottom: 13px;
+}
+
+.hero-trust-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  color: #aebed5;
+  font-size: 0.63rem;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.hero-trust-title svg {
+  color: #71dbae;
+}
+
+.hero-trust-logos {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(4, minmax(0, 0.78fr));
+  gap: 6px;
+}
+
+.hero-trust-logo {
+  min-width: 0;
+  height: 70px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 9px;
+  padding: 17px 7px 5px;
+  background: #fff;
+}
+
+.hero-trust-logo > small {
+  position: absolute;
+  top: 5px;
+  left: 7px;
+  color: #758196;
+  font-size: 0.39rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+}
+
+.hero-trust-logo img {
+  width: 100%;
+  height: 43px !important;
+  object-fit: contain;
+}
+
+.hero-alcheringa-logo img {
+  transform: scale(1.37);
+}
+
+.hero-startup-logo strong {
+  color: #15994c;
+  font-size: clamp(0.75rem, 1vw, 1rem);
+  letter-spacing: -0.06em;
+}
+
+.hero-startup-logo strong i {
+  color: #ff5019;
+  font-style: normal;
+}
+
+.hero-iso-logo strong {
+  color: #0b3996;
+  font-size: clamp(0.75rem, 1vw, 0.96rem);
+}
+
+.hero-iso-logo strong b {
+  font-size: 0.5em;
 }
 
 .hero-proof-grid-v2 {
@@ -2749,10 +2835,15 @@ p {
 
 .hero-proof-grid-v2 > div {
   min-height: 72px;
+  min-width: 0;
   border-color: rgba(176, 199, 231, 0.2);
   padding: 12px 13px;
   background: rgba(12, 41, 86, 0.68);
   backdrop-filter: blur(8px);
+}
+
+.hero-proof-grid-v2 span {
+  min-width: 0;
 }
 
 .hero-proof-grid-v2 > .stipend-proof {
@@ -3071,7 +3162,9 @@ p {
   }
 
   .conversion-action-v2 {
-    width: min(590px, 100%);
+    width: 100%;
+    max-width: 590px;
+    min-width: 0;
   }
 
   .recognition-grid {
@@ -3136,6 +3229,42 @@ p {
   .conversion-copy-v2 .hero-lead {
     margin-bottom: 18px;
     font-size: 0.92rem;
+  }
+
+  .hero-trust-block {
+    max-width: 100%;
+    margin: 0 0 16px;
+  }
+
+  .hero-trust-title {
+    margin-bottom: 7px;
+  }
+
+  .hero-trust-logos {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .hero-trust-logo {
+    height: 68px;
+    width: auto;
+  }
+
+  .hero-alcheringa-logo {
+    grid-column: span 2;
+  }
+
+  .hero-startup-logo,
+  .hero-iso-logo {
+    grid-column: span 2;
+  }
+
+  .hero-startup-logo strong,
+  .hero-iso-logo strong {
+    font-size: 0.82rem;
   }
 
   .hero-proof-grid-v2 {

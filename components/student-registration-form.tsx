@@ -79,7 +79,7 @@ export function StudentRegistrationForm({
   return (
     <form className="registration-card" onSubmit={submit}>
       <span className="eyebrow">ONE STEP · NO LONG APPLICATION</span>
-      <h2>Choose your internship path</h2>
+      <h2>Register for your internship</h2>
       <p>Select a domain. Share your name and mobile. Done.</p>
       <label>
         Preferred internship domain
@@ -142,7 +142,7 @@ export function StudentRegistrationForm({
       </label>
       {error && <div className="alert error">{error}</div>}
       <button className="gold-button wide" type="submit" disabled={loading}>
-        {loading ? "Registering..." : "Register my interest"}
+        {loading ? "Registering..." : "Register for internship"}
         {!loading && <ArrowRight size={18} />}
       </button>
     </form>
