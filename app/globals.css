@@ -3252,6 +3252,105 @@ p {
   background: #fff;
 }
 
+.student-signup-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.student-signup-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(3, 14, 34, 0.78);
+  backdrop-filter: blur(8px);
+  cursor: default;
+  animation: signup-backdrop-in 180ms ease-out both;
+}
+
+.student-signup-modal-card {
+  width: min(470px, 100%);
+  max-height: calc(100svh - 48px);
+  position: relative;
+  z-index: 1;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 20px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 34px 110px rgba(0, 0, 0, 0.42);
+  animation: signup-card-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.student-signup-modal-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 5px 7px 0 14px;
+}
+
+.student-signup-modal-topline > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--navy);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.student-signup-modal-topline > span svg {
+  color: #c58a00;
+}
+
+.student-signup-modal-topline > button {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  background: #eef2f7;
+  color: var(--navy);
+}
+
+.student-signup-modal-card .registration-card {
+  border: 0;
+  padding: 18px 24px 11px;
+  box-shadow: none;
+}
+
+.student-signup-modal-card .registration-card h2 {
+  font-size: 1.85rem;
+}
+
+.student-signup-later {
+  width: 100%;
+  min-height: 35px;
+  border: 0;
+  background: transparent;
+  color: #7c8798;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+@keyframes signup-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes signup-card-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .industry-trademark-note {
   max-width: 440px;
   color: #929baa;
@@ -3573,6 +3672,26 @@ p {
   .student-footer-v2 {
     min-height: 92px;
     padding-bottom: 22px;
+  }
+
+  .student-signup-modal {
+    align-items: end;
+    padding: 0;
+  }
+
+  .student-signup-modal-card {
+    width: 100%;
+    max-height: min(92svh, 760px);
+    border-radius: 22px 22px 0 0;
+    padding: 9px 9px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .student-signup-modal-card .registration-card {
+    padding: 16px 13px 8px;
+  }
+
+  .student-signup-modal-card .registration-card h2 {
+    font-size: 1.65rem;
   }
 
   .industry-trademark-note {

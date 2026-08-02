@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BadgeIndianRupee,
@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
 import { internshipDomains } from "@/lib/domains";
 import { StudentRegistrationForm } from "@/components/student-registration-form";
@@ -48,17 +49,92 @@ export function StudentOpportunity({
   const [domain, setDomain] = useState("");
   const [registered, setRegistered] = useState(false);
   const [showAllDomains, setShowAllDomains] = useState(false);
+  const [popupOpen, setPopupOpen] = useState(false);
   const formAnchor = useRef<HTMLDivElement>(null);
+  const popupStorageKey = `persevex-signup-popup:${slug}`;
 
-  function scrollToForm() {
-    formAnchor.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  function showSignupPopup() {
+    if (registered) return;
+    try {
+      window.sessionStorage.setItem(popupStorageKey, "shown");
+    } catch {
+      // The form still works when browser storage is unavailable.
+    }
+    setPopupOpen(true);
   }
 
   function chooseDomain(value: string) {
     if (registered) return;
     setDomain(value);
-    scrollToForm();
+    showSignupPopup();
   }
+
+  useEffect(() => {
+    if (registered) return;
+
+    let alreadyShown = false;
+    try {
+      alreadyShown = window.sessionStorage.getItem(popupStorageKey) === "shown";
+    } catch {
+      // Continue without session persistence when storage is blocked.
+    }
+    if (alreadyShown) return;
+
+    const startedAt = Date.now();
+    let triggered = false;
+
+    function triggerPopup() {
+      if (triggered || document.activeElement?.matches("input, select, textarea")) return;
+      try {
+        if (window.sessionStorage.getItem(popupStorageKey) === "shown") return;
+      } catch {
+        // Continue without session persistence when storage is blocked.
+      }
+      triggered = true;
+      try {
+        window.sessionStorage.setItem(popupStorageKey, "shown");
+      } catch {
+        // The form still works when browser storage is unavailable.
+      }
+      setPopupOpen(true);
+    }
+
+    function handleScroll() {
+      const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+      if (scrollable <= 0 || Date.now() - startedAt < 4500) return;
+      if (window.scrollY / scrollable >= 0.4) triggerPopup();
+    }
+
+    function handleExitIntent(event: MouseEvent) {
+      if (event.clientY <= 0 && Date.now() - startedAt >= 8000) triggerPopup();
+    }
+
+    const timer = window.setTimeout(triggerPopup, 22000);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    document.addEventListener("mouseout", handleExitIntent);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("scroll", handleScroll);
+      document.removeEventListener("mouseout", handleExitIntent);
+    };
+  }, [popupStorageKey, registered]);
+
+  useEffect(() => {
+    if (!popupOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.key === "Escape") setPopupOpen(false);
+    }
+
+    document.addEventListener("keydown", handleKeydown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeydown);
+    };
+  }, [popupOpen]);
 
   const visibleDomains = showAllDomains
     ? internshipDomains
@@ -78,7 +154,7 @@ export function StudentOpportunity({
           />
           <span className="official-opportunity"><ShieldCheck size={15} /> Official student opportunity</span>
           {!registered && (
-            <button type="button" className="header-register-link" onClick={scrollToForm}>
+            <button type="button" className="header-register-link" onClick={showSignupPopup}>
               Register now <ArrowRight size={15} />
             </button>
           )}
@@ -286,6 +362,37 @@ export function StudentOpportunity({
         <div><strong>02</strong><span><b>Register in one minute</b><small>Share your name and mobile number.</small></span></div>
         <div><strong>03</strong><span><b>Hear from Persevex</b><small>The team contacts you with relevant next steps.</small></span></div>
       </section>
+
+      {popupOpen && (
+        <div className="student-signup-modal" role="dialog" aria-modal="true" aria-label="Internship registration">
+          <button
+            type="button"
+            className="student-signup-backdrop"
+            aria-label="Close registration form"
+            onClick={() => setPopupOpen(false)}
+          />
+          <div className="student-signup-modal-card">
+            <div className="student-signup-modal-topline">
+              <span><Sparkles size={14} /> Finish your registration</span>
+              <button type="button" aria-label="Close registration form" onClick={() => setPopupOpen(false)} autoFocus>
+                <X size={18} />
+              </button>
+            </div>
+            <StudentRegistrationForm
+              slug={slug}
+              domain={domain}
+              onDomainChange={setDomain}
+              onRegistered={() => {
+                setRegistered(true);
+                window.setTimeout(() => setPopupOpen(false), 1600);
+              }}
+            />
+            <button type="button" className="student-signup-later" onClick={() => setPopupOpen(false)}>
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
 
       <footer className="student-footer student-footer-v2">
         <Image
