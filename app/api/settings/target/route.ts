@@ -14,7 +14,8 @@ export async function PATCH(request: Request) {
     return errorResponse("Target must be a whole number between 1 and 10,000.");
   }
 
-  const { error } = await createAdminSupabase()
+  const admin = createAdminSupabase();
+  const { error } = await admin
     .from("app_settings")
     .upsert({
       key: "default_ambassador_target",
@@ -23,6 +24,11 @@ export async function PATCH(request: Request) {
       updated_at: new Date().toISOString(),
     });
   if (error) return errorResponse("Unable to update the target.", 500);
+
+  await admin.from("activity_events").insert({
+    event_type: "settings_updated",
+    actor_id: actor.id,
+  });
 
   return NextResponse.json({ target });
 }

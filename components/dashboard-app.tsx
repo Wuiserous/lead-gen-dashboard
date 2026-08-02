@@ -38,7 +38,9 @@ import {
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type {
   AppRole,
+  DashboardActivityEvent,
   DashboardData,
+  DashboardLiveUpdate,
   Registration,
   RegistrationStatus,
 } from "@/lib/types";
@@ -75,6 +77,36 @@ function inDateRange(value: string, range: DateRange) {
   return isWithinReportingRange(value, range);
 }
 
+function registrationMatchesView(
+  lead: Registration,
+  filters: {
+    teamId: string;
+    memberId: string;
+    groupId: string;
+    dateRange: DateRange;
+    search: string;
+  },
+) {
+  const needle = filters.search.toLowerCase();
+  return (
+    (filters.teamId === "all" || lead.credited_team_id === filters.teamId) &&
+    (filters.memberId === "all" || lead.credited_sales_id === filters.memberId) &&
+    (filters.groupId === "all" || lead.ambassador_id === filters.groupId) &&
+    inDateRange(lead.created_at, filters.dateRange) &&
+    (
+      !needle ||
+      lead.name.toLowerCase().includes(needle) ||
+      lead.phone.includes(needle) ||
+      lead.preferred_domain.toLowerCase().includes(needle) ||
+      ambassadorLabel(lead).toLowerCase().includes(needle)
+    )
+  );
+}
+
+function upsertById<T extends { id: string }>(items: T[], value: T) {
+  return [value, ...items.filter((item) => item.id !== value.id)];
+}
+
 function publicBaseUrl() {
   return typeof window === "undefined"
     ? ""
@@ -108,30 +140,81 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [page, setPage] = useState(1);
   const loadedOnce = useRef(false);
+  const loadSequence = useRef(0);
+  const visibleLoadInFlight = useRef(false);
+  const dataRevision = useRef(0);
+  const processedLiveEvents = useRef(new Set<number>());
+  const latestSummaryEvent = useRef(0);
+  const reconcileTimer = useRef<number | undefined>(undefined);
+  const reportingViewKey = [
+    teamFilter,
+    memberFilter,
+    groupFilter,
+    dateRange,
+    debouncedSearch,
+    page,
+  ].join("|");
+  const reportingViewKeyRef = useRef(reportingViewKey);
 
-  const load = useCallback(async (quiet = false) => {
-    if (quiet || loadedOnce.current) setRefreshing(true);
-    else setLoading(true);
+  useEffect(() => {
+    reportingViewKeyRef.current = reportingViewKey;
+  }, [reportingViewKey]);
+
+  const load = useCallback(async (quiet = false, silent = false) => {
+    if (silent && visibleLoadInFlight.current) return;
+    const requestId = ++loadSequence.current;
+    const revisionAtStart = dataRevision.current;
+    if (!silent) {
+      visibleLoadInFlight.current = true;
+      if (quiet || loadedOnce.current) setRefreshing(true);
+      else setLoading(true);
+    }
     const params = new URLSearchParams({ page: String(page), pageSize: "50" });
     if (teamFilter !== "all") params.set("teamId", teamFilter);
     if (memberFilter !== "all") params.set("memberId", memberFilter);
     if (groupFilter !== "all") params.set("groupId", groupFilter);
     if (dateRange !== "all") params.set("dateRange", dateRange);
     if (debouncedSearch) params.set("search", debouncedSearch);
-    const response = await fetch(`/api/dashboard?${params.toString()}`, {
-      cache: "no-store",
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/dashboard?${params.toString()}`, {
+        cache: "no-store",
+      });
+    } catch {
+      if (requestId === loadSequence.current && !silent) {
+        visibleLoadInFlight.current = false;
+        setError("Unable to reach the dashboard. Check your connection.");
+        setLoading(false);
+        setRefreshing(false);
+      }
+      return;
+    }
+    if (requestId !== loadSequence.current) return;
     if (!response.ok) {
       if (response.status === 401) {
         router.replace("/");
         return;
       }
       setError(await readError(response));
-      setLoading(false);
-      setRefreshing(false);
+      if (!silent) {
+        visibleLoadInFlight.current = false;
+        setLoading(false);
+        setRefreshing(false);
+      }
       return;
     }
     const result = (await response.json()) as DashboardData;
+    if (
+      requestId !== loadSequence.current ||
+      revisionAtStart !== dataRevision.current
+    ) {
+      if (!silent) {
+        visibleLoadInFlight.current = false;
+        setLoading(false);
+        setRefreshing(false);
+      }
+      return;
+    }
     if (result.user.role !== expectedRole) {
       router.replace(
         result.user.role === "admin"
@@ -146,9 +229,156 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     setPage(result.pagination.page);
     loadedOnce.current = true;
     setError("");
-    setLoading(false);
-    setRefreshing(false);
+    if (!silent) {
+      visibleLoadInFlight.current = false;
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [dateRange, debouncedSearch, expectedRole, groupFilter, memberFilter, page, router, teamFilter]);
+
+  const scheduleReconciliation = useCallback(() => {
+    if (reconcileTimer.current) window.clearTimeout(reconcileTimer.current);
+    reconcileTimer.current = window.setTimeout(() => void load(true, true), 4_000);
+  }, [load]);
+
+  const loadLiveEvent = useCallback(async (event: DashboardActivityEvent) => {
+    const viewKeyAtStart = reportingViewKey;
+    if (processedLiveEvents.current.has(event.id)) return;
+    processedLiveEvents.current.add(event.id);
+    if (processedLiveEvents.current.size > 250) {
+      const oldest = processedLiveEvents.current.values().next().value;
+      if (typeof oldest === "number") processedLiveEvents.current.delete(oldest);
+    }
+
+    const isRegistrationEvent = event.event_type.startsWith("registration_");
+    const isAmbassadorEvent = event.event_type.startsWith("ambassador_");
+    if (!isRegistrationEvent && !isAmbassadorEvent) {
+      await load(true, true);
+      scheduleReconciliation();
+      return;
+    }
+
+    const affectedGroupId =
+      event.ambassador_id ?? (isAmbassadorEvent ? event.entity_id : null);
+    const matchesScope =
+      (teamFilter === "all" || event.team_id === teamFilter) &&
+      (memberFilter === "all" || event.sales_id === memberFilter) &&
+      (groupFilter === "all" || affectedGroupId === groupFilter);
+    if (!matchesScope) return;
+
+    const params = new URLSearchParams({
+      eventId: String(event.id),
+      page: String(page),
+      pageSize: "50",
+    });
+    if (teamFilter !== "all") params.set("teamId", teamFilter);
+    if (memberFilter !== "all") params.set("memberId", memberFilter);
+    if (groupFilter !== "all") params.set("groupId", groupFilter);
+    if (dateRange !== "all") params.set("dateRange", dateRange);
+    if (debouncedSearch) params.set("search", debouncedSearch);
+
+    let response: Response;
+    try {
+      response = await fetch(`/api/dashboard/live?${params.toString()}`, {
+        cache: "no-store",
+      });
+    } catch {
+      await load(true, true);
+      scheduleReconciliation();
+      return;
+    }
+    if (!response.ok) {
+      await load(true, true);
+      scheduleReconciliation();
+      return;
+    }
+
+    const update = (await response.json()) as DashboardLiveUpdate;
+    if (reportingViewKeyRef.current !== viewKeyAtStart) return;
+    const applySummary = update.event.id >= latestSummaryEvent.current;
+    if (applySummary) latestSummaryEvent.current = update.event.id;
+    dataRevision.current += 1;
+    setData((current) => {
+      if (!current) return current;
+
+      let registrations = current.registrations;
+      if (isRegistrationEvent && update.event.entity_id) {
+        const existed = registrations.some(
+          (lead) => lead.id === update.event.entity_id,
+        );
+        registrations = registrations.filter(
+          (lead) => lead.id !== update.event.entity_id,
+        );
+        if (
+          update.registration &&
+          registrationMatchesView(update.registration, {
+            teamId: teamFilter,
+            memberId: memberFilter,
+            groupId: groupFilter,
+            dateRange,
+            search: debouncedSearch,
+          }) &&
+          (existed || current.pagination.page === 1)
+        ) {
+          registrations = [update.registration, ...registrations]
+            .sort(
+              (left, right) =>
+                Date.parse(right.created_at) - Date.parse(left.created_at),
+            )
+            .slice(0, current.pagination.pageSize);
+        }
+      }
+
+      let ambassadors = current.ambassadors;
+      if (
+        update.event.event_type === "ambassador_deleted" &&
+        update.event.entity_id
+      ) {
+        ambassadors = ambassadors.filter(
+          (item) => item.id !== update.event.entity_id,
+        );
+      }
+      if (update.ambassador) {
+        ambassadors = upsertById(ambassadors, update.ambassador).sort(
+          (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at),
+        );
+      }
+
+      let teams = current.teams;
+      if (update.teamPerformance) {
+        teams = upsertById(teams, update.teamPerformance).sort((left, right) =>
+          left.name.localeCompare(right.name),
+        );
+      }
+      let salesPerformance = current.salesPerformance;
+      if (update.salesPerformance) {
+        salesPerformance = upsertById(
+          salesPerformance,
+          update.salesPerformance,
+        ).sort((left, right) => right.registration_count - left.registration_count);
+      }
+
+      return {
+        ...current,
+        registrations,
+        ambassadors,
+        teams,
+        salesPerformance,
+        summary: applySummary ? update.summary : current.summary,
+        pagination: applySummary ? update.pagination : current.pagination,
+      };
+    });
+    if (applySummary && update.pagination.page !== page) {
+      setPage(update.pagination.page);
+    }
+    scheduleReconciliation();
+  }, [dateRange, debouncedSearch, groupFilter, load, memberFilter, page, reportingViewKey, scheduleReconciliation, teamFilter]);
+
+  const loadLiveEventRef = useRef(loadLiveEvent);
+
+  useEffect(() => {
+    loadLiveEventRef.current = loadLiveEvent;
+  }, [loadLiveEvent]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -165,38 +395,46 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
 
   useEffect(() => {
     const userId = data?.user.id;
-    const userRole = data?.user.role;
-    const userTeamId = data?.user.team_id;
-    if (!userId || !userRole) return;
+    if (!userId) return;
     const supabase = createBrowserSupabase();
-    let refreshTimer: number | undefined;
-    const filter =
-      userRole === "sales"
-        ? `sales_id=eq.${userId}`
-        : userRole === "team_lead" && userTeamId
-          ? `team_id=eq.${userTeamId}`
-          : undefined;
-    const channel = supabase
-      .channel(`dashboard-${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "activity_events",
-          ...(filter ? { filter } : {}),
-        },
-        () => {
-          if (refreshTimer) window.clearTimeout(refreshTimer);
-          refreshTimer = window.setTimeout(() => void load(true), 700);
-        },
-      )
-      .subscribe((status: string) => setLive(status === "SUBSCRIBED"));
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | undefined;
+    void (async () => {
+      try {
+        await supabase.realtime.setAuth();
+        if (cancelled) return;
+        channel = supabase
+          .channel(`dashboard:user:${userId}`, { config: { private: true } })
+          .on(
+            "broadcast",
+            { event: "dashboard_changed" },
+            (message: { payload?: DashboardActivityEvent }) => {
+              if (message.payload) void loadLiveEventRef.current(message.payload);
+            },
+          )
+          .subscribe((status: string) => setLive(status === "SUBSCRIBED"));
+      } catch {
+        if (!cancelled) setLive(false);
+      }
+    })();
     return () => {
-      if (refreshTimer) window.clearTimeout(refreshTimer);
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
     };
-  }, [data?.user.id, data?.user.role, data?.user.team_id, load]);
+  }, [data?.user.id]);
+
+  useEffect(() => {
+    const reconcile = () => {
+      if (document.visibilityState === "visible") void load(true, true);
+    };
+    const interval = window.setInterval(reconcile, 60_000);
+    document.addEventListener("visibilitychange", reconcile);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", reconcile);
+      if (reconcileTimer.current) window.clearTimeout(reconcileTimer.current);
+    };
+  }, [load]);
 
   async function logout() {
     await createBrowserSupabase().auth.signOut();
@@ -452,7 +690,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 setPage(1);
                 setTab("leads");
               }}
-              onRefresh={() => void load(true)}
+              onRefresh={scheduleReconciliation}
             />
           )}
           {tab === "leads" && (
@@ -501,7 +739,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               <LeadsTable
                 registrations={filteredRegistrations}
                 canDelete={data.user.role !== "sales"}
-                onRefresh={() => void load(true)}
+                onRefresh={scheduleReconciliation}
               />
               <Pagination
                 page={data.pagination.page}

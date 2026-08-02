@@ -113,3 +113,23 @@ export type DashboardData = {
   summary: DashboardSummary;
   pagination: DashboardPagination;
 };
+
+export type DashboardActivityEvent = {
+  id: number;
+  event_type: string;
+  team_id: string | null;
+  sales_id: string | null;
+  ambassador_id: string | null;
+  entity_id: string | null;
+  created_at: string;
+};
+
+export type DashboardLiveUpdate = {
+  event: DashboardActivityEvent;
+  registration: Registration | null;
+  ambassador: AmbassadorPerformance | null;
+  teamPerformance: TeamPerformance | null;
+  salesPerformance: SalesPerformance | null;
+  summary: DashboardSummary;
+  pagination: DashboardPagination;
+};

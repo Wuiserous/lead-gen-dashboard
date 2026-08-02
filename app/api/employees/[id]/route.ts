@@ -80,7 +80,7 @@ export async function DELETE(
   const admin = createAdminSupabase();
   const { data: profile } = await admin
     .from("profiles")
-    .select("id,role")
+    .select("id,role,team_id")
     .eq("id", id)
     .maybeSingle();
   if (!profile || profile.role === "admin") {
@@ -107,6 +107,12 @@ export async function DELETE(
     entity_type: "employee",
     entity_id: id,
     details: { role: profile.role },
+  });
+  await admin.from("activity_events").insert({
+    event_type: "employee_deleted",
+    actor_id: actor.id,
+    team_id: profile.team_id,
+    entity_id: id,
   });
 
   return NextResponse.json({ ok: true });

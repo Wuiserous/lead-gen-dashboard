@@ -102,6 +102,11 @@ export async function DELETE(
     entity_id: id,
     details: { name: team.name },
   });
+  await admin.from("activity_events").insert({
+    event_type: "team_deleted",
+    actor_id: actor.id,
+    entity_id: id,
+  });
 
   return NextResponse.json({ ok: true });
 }
