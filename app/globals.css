@@ -2778,8 +2778,8 @@ p {
   position: relative;
   isolation: isolate;
   align-items: center;
-  grid-template-columns: minmax(0, 1.08fr) minmax(380px, 0.66fr);
-  gap: clamp(56px, 7vw, 110px);
+  grid-template-columns: minmax(0, 760px);
+  justify-content: start;
   overflow: hidden;
   padding-top: 64px;
   padding-bottom: 64px;
@@ -2787,6 +2787,11 @@ p {
     linear-gradient(90deg, rgba(5, 21, 48, 0.97) 0%, rgba(5, 25, 57, 0.92) 44%, rgba(5, 25, 57, 0.78) 72%, rgba(5, 25, 57, 0.84) 100%),
     linear-gradient(180deg, rgba(7, 26, 60, 0.2), rgba(7, 26, 60, 0.82)),
     url("/student-internship-hero.webp") center / cover no-repeat;
+}
+
+.conversion-copy-v2 {
+  width: 100%;
+  max-width: 760px;
 }
 
 .conversion-hero-v2 > * {
@@ -2971,6 +2976,22 @@ p {
 
 .hero-proof-grid-v2 small {
   font-size: 0.54rem;
+}
+
+.hero-register-button {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 17px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 24px;
+  background: var(--gold);
+  color: var(--navy);
+  font-weight: 900;
+  box-shadow: 0 13px 32px rgba(255, 180, 0, 0.24);
 }
 
 .invite-strip-v2 {
@@ -3248,6 +3269,37 @@ p {
   margin-bottom: 65px;
 }
 
+.registration-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin: 20px 0 0;
+}
+
+.registration-summary > div {
+  min-width: 0;
+  border: 1px solid #cce5d9;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.registration-summary dt {
+  color: #668073;
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.registration-summary dd {
+  overflow-wrap: anywhere;
+  margin: 4px 0 0;
+  color: var(--navy);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
 .student-footer-v2 {
   background: #fff;
 }
@@ -3277,6 +3329,7 @@ p {
   position: relative;
   z-index: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 20px;
   padding: 10px;
@@ -3288,9 +3341,9 @@ p {
 .student-signup-modal-topline {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 14px;
-  padding: 5px 7px 0 14px;
+  padding: 9px 12px 0;
 }
 
 .student-signup-modal-topline > span {
@@ -3308,19 +3361,6 @@ p {
   color: #c58a00;
 }
 
-.student-signup-modal-topline > button {
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  border: 0;
-  border-radius: 50%;
-  background: #eef2f7;
-  color: var(--navy);
-}
-
 .student-signup-modal-card .registration-card {
   border: 0;
   padding: 18px 24px 11px;
@@ -3329,16 +3369,6 @@ p {
 
 .student-signup-modal-card .registration-card h2 {
   font-size: 1.85rem;
-}
-
-.student-signup-later {
-  width: 100%;
-  min-height: 35px;
-  border: 0;
-  background: transparent;
-  color: #7c8798;
-  font-size: 0.68rem;
-  font-weight: 750;
 }
 
 @keyframes signup-backdrop-in {
@@ -3362,8 +3392,7 @@ p {
 @media (max-width: 1080px) {
   .conversion-hero-v2 {
     min-height: auto;
-    grid-template-columns: minmax(0, 1fr) minmax(350px, 0.8fr);
-    gap: 30px;
+    grid-template-columns: minmax(0, 700px);
   }
 
   .conversion-copy-v2 h1 {
@@ -3386,18 +3415,11 @@ p {
 @media (max-width: 840px) {
   .conversion-hero-v2 {
     grid-template-columns: 1fr;
-    gap: 46px;
     padding-top: 52px;
     padding-bottom: 58px;
     background:
       linear-gradient(180deg, rgba(5, 21, 48, 0.92) 0%, rgba(5, 25, 57, 0.84) 47%, rgba(5, 25, 57, 0.93) 100%),
       url("/student-internship-hero.webp") 64% center / cover no-repeat;
-  }
-
-  .conversion-action-v2 {
-    width: 100%;
-    max-width: 590px;
-    min-width: 0;
   }
 
   .hero-industry-watermarks {
@@ -3573,6 +3595,10 @@ p {
     min-width: 100%;
   }
 
+  .hero-register-button {
+    width: 100%;
+  }
+
   .conversion-action-v2 .registration-card {
     padding: 24px 18px;
   }
@@ -3692,6 +3718,10 @@ p {
 
   .student-signup-modal-card .registration-card h2 {
     font-size: 1.65rem;
+  }
+
+  .registration-summary {
+    grid-template-columns: 1fr;
   }
 
   .industry-trademark-note {

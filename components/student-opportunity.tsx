@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BadgeIndianRupee,
@@ -9,17 +9,18 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  Clock3,
   GraduationCap,
   Presentation,
   Rocket,
   ShieldCheck,
   Sparkles,
   Users,
-  X,
 } from "lucide-react";
 import { internshipDomains } from "@/lib/domains";
-import { StudentRegistrationForm } from "@/components/student-registration-form";
+import {
+  RegisteredStudentDetails,
+  StudentRegistrationForm,
+} from "@/components/student-registration-form";
 
 type AmbassadorInvite = {
   name: string;
@@ -48,18 +49,13 @@ export function StudentOpportunity({
 }) {
   const [domain, setDomain] = useState("");
   const [registered, setRegistered] = useState(false);
+  const [registrationDetails, setRegistrationDetails] =
+    useState<RegisteredStudentDetails | null>(null);
   const [showAllDomains, setShowAllDomains] = useState(false);
   const [popupOpen, setPopupOpen] = useState(false);
-  const formAnchor = useRef<HTMLDivElement>(null);
-  const popupStorageKey = `persevex-signup-popup:${slug}`;
 
   function showSignupPopup() {
     if (registered) return;
-    try {
-      window.sessionStorage.setItem(popupStorageKey, "shown");
-    } catch {
-      // The form still works when browser storage is unavailable.
-    }
     setPopupOpen(true);
   }
 
@@ -72,30 +68,12 @@ export function StudentOpportunity({
   useEffect(() => {
     if (registered) return;
 
-    let alreadyShown = false;
-    try {
-      alreadyShown = window.sessionStorage.getItem(popupStorageKey) === "shown";
-    } catch {
-      // Continue without session persistence when storage is blocked.
-    }
-    if (alreadyShown) return;
-
     const startedAt = Date.now();
     let triggered = false;
 
     function triggerPopup() {
       if (triggered || document.activeElement?.matches("input, select, textarea")) return;
-      try {
-        if (window.sessionStorage.getItem(popupStorageKey) === "shown") return;
-      } catch {
-        // Continue without session persistence when storage is blocked.
-      }
       triggered = true;
-      try {
-        window.sessionStorage.setItem(popupStorageKey, "shown");
-      } catch {
-        // The form still works when browser storage is unavailable.
-      }
       setPopupOpen(true);
     }
 
@@ -118,21 +96,15 @@ export function StudentOpportunity({
       window.removeEventListener("scroll", handleScroll);
       document.removeEventListener("mouseout", handleExitIntent);
     };
-  }, [popupStorageKey, registered]);
+  }, [registered]);
 
   useEffect(() => {
     if (!popupOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    function handleKeydown(event: KeyboardEvent) {
-      if (event.key === "Escape") setPopupOpen(false);
-    }
-
-    document.addEventListener("keydown", handleKeydown);
     return () => {
       document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", handleKeydown);
     };
   }, [popupOpen]);
 
@@ -231,6 +203,12 @@ export function StudentOpportunity({
             </div>
           </div>
 
+          {!registered && (
+            <button type="button" className="hero-register-button" onClick={showSignupPopup}>
+              Register for internship <ArrowRight size={18} />
+            </button>
+          )}
+
           <div className="invite-strip invite-strip-v2">
             <span className="invite-avatar">{ambassador.name[0]}</span>
             <span>
@@ -241,24 +219,6 @@ export function StudentOpportunity({
           </div>
         </div>
 
-        <div className="conversion-action conversion-action-v2" ref={formAnchor} id="student-register">
-          <div className="form-urgency">
-            <Clock3 size={15} />
-            <span>One-minute registration</span>
-          </div>
-          <StudentRegistrationForm
-            slug={slug}
-            domain={domain}
-            onDomainChange={setDomain}
-            onRegistered={() => setRegistered(true)}
-          />
-          {!registered && (
-            <div className="registration-reassurance registration-reassurance-v2">
-              <span><Check size={14} /> Name + mobile only</span>
-              <span><Check size={14} /> Team contacts you</span>
-            </div>
-          )}
-        </div>
       </section>
 
       <section className="recognition-section" aria-label="Persevex recognition and training ecosystem">
@@ -297,9 +257,15 @@ export function StudentOpportunity({
             <span className="eyebrow">YOU ARE ALL SET</span>
             <h2>The Persevex team will contact you soon.</h2>
             <p>
-              Your registration is complete for <strong>{domain}</strong>. No
-              further action is required right now.
+              Your details are saved. No further action is required right now.
             </p>
+            {registrationDetails && (
+              <dl className="registration-summary">
+                <div><dt>Name</dt><dd>{registrationDetails.name}</dd></div>
+                <div><dt>Mobile</dt><dd>+91 {registrationDetails.phone}</dd></div>
+                <div><dt>Internship domain</dt><dd>{registrationDetails.domain}</dd></div>
+              </dl>
+            )}
           </div>
         </section>
       ) : (
@@ -365,31 +331,21 @@ export function StudentOpportunity({
 
       {popupOpen && (
         <div className="student-signup-modal" role="dialog" aria-modal="true" aria-label="Internship registration">
-          <button
-            type="button"
-            className="student-signup-backdrop"
-            aria-label="Close registration form"
-            onClick={() => setPopupOpen(false)}
-          />
+          <div className="student-signup-backdrop" aria-hidden="true" />
           <div className="student-signup-modal-card">
             <div className="student-signup-modal-topline">
-              <span><Sparkles size={14} /> Finish your registration</span>
-              <button type="button" aria-label="Close registration form" onClick={() => setPopupOpen(false)} autoFocus>
-                <X size={18} />
-              </button>
+              <span><Sparkles size={14} /> Complete your registration to continue</span>
             </div>
             <StudentRegistrationForm
               slug={slug}
               domain={domain}
               onDomainChange={setDomain}
-              onRegistered={() => {
+              onRegistered={(details) => {
+                setRegistrationDetails(details);
                 setRegistered(true);
-                window.setTimeout(() => setPopupOpen(false), 1600);
+                setPopupOpen(false);
               }}
             />
-            <button type="button" className="student-signup-later" onClick={() => setPopupOpen(false)}>
-              Maybe later
-            </button>
           </div>
         </div>
       )}

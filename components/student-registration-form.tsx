@@ -4,6 +4,12 @@ import { useState } from "react";
 import { ArrowRight, CheckCircle2, ChevronDown } from "lucide-react";
 import { internshipDomains } from "@/lib/domains";
 
+export type RegisteredStudentDetails = {
+  name: string;
+  phone: string;
+  domain: string;
+};
+
 function nationalPhoneDigits(value: string) {
   let digits = value.replace(/\D/g, "");
 
@@ -29,7 +35,7 @@ export function StudentRegistrationForm({
   slug: string;
   domain: string;
   onDomainChange: (domain: string) => void;
-  onRegistered: () => void;
+  onRegistered: (details: RegisteredStudentDetails) => void;
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -54,7 +60,7 @@ export function StudentRegistrationForm({
         return;
       }
       setDone(true);
-      onRegistered();
+      onRegistered({ name: name.trim(), phone, domain });
     } catch {
       setError("Unable to register. Check your connection and try again.");
     } finally {
