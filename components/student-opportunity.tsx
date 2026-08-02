@@ -83,16 +83,18 @@ export function StudentOpportunity({
             </button>
           )}
         </div>
-        <div className="nav-industry-strip" aria-label="Industry career references">
-          <span className="nav-industry-label">Career relevance</span>
-          <div className="nav-industry-logos">
-            {industryCompanies.map((company) => (
-              <span className="nav-industry-logo" key={company.name} title={company.name}>
-                <Image src={company.logo} alt={company.name} width={82} height={28} />
-              </span>
+        <div className="nav-industry-strip" aria-label="Company logos">
+          <div className="nav-industry-track">
+            {[0, 1, 2, 3].map((repeat) => (
+              <div className="nav-industry-logos" key={repeat} aria-hidden={repeat > 0}>
+                {industryCompanies.map((company) => (
+                  <span className="nav-industry-logo" key={`${repeat}-${company.name}`} title={company.name}>
+                    <Image src={company.logo} alt={repeat === 0 ? company.name : ""} width={94} height={30} />
+                  </span>
+                ))}
+              </div>
             ))}
           </div>
-          <span className="nav-industry-note">Industry examples · no affiliation</span>
         </div>
       </header>
 
