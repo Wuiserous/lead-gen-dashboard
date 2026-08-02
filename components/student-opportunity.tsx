@@ -80,31 +80,25 @@ export function StudentOpportunity({
           </div>
           <h1>Internships in 23 domains. <em>Pick yours.</em></h1>
           <p className="hero-lead">
-            Open to students at every stage of college. Choose your field, work
-            on practical projects, and learn with live mentors.
+            Choose your field. Work on real projects. Learn with live mentors.
           </p>
 
           <div className="hero-trust-block">
             <span className="hero-trust-title"><ShieldCheck size={14} /> Collaboration &amp; recognition</span>
             <div className="hero-trust-logos">
               <span className="hero-trust-logo hero-alcheringa-logo">
-                <small>TRAINING COLLABORATION</small>
                 <Image src="/alcheringa-iit-guwahati.png" alt="Alcheringa, IIT Guwahati 2026" width={960} height={334} />
               </span>
               <span className="hero-trust-logo">
-                <small>TRAINING ECOSYSTEM</small>
                 <Image src="/skill-india.png" alt="Skill India" width={550} height={260} />
               </span>
               <span className="hero-trust-logo">
-                <small>TRAINING ECOSYSTEM</small>
                 <Image src="/nsdc.png" alt="National Skill Development Corporation" width={650} height={240} />
               </span>
               <span className="hero-trust-logo hero-startup-logo">
-                <small>DPIIT RECOGNISED</small>
                 <strong><i>#startup</i>india</strong>
               </span>
               <span className="hero-trust-logo hero-iso-logo">
-                <small>ISO CERTIFIED</small>
                 <strong>ISO <b>9001:2015</b></strong>
               </span>
             </div>
@@ -113,7 +107,7 @@ export function StudentOpportunity({
           <div className="hero-proof-grid hero-proof-grid-v2">
             <div>
               <BriefcaseBusiness size={20} />
-              <span><strong>23 internship domains</strong><small>Choose the field you want</small></span>
+              <span><strong>23 internship domains</strong></span>
             </div>
             <div className="stipend-proof">
               <BadgeIndianRupee size={20} />
@@ -121,11 +115,11 @@ export function StudentOpportunity({
             </div>
             <div>
               <Presentation size={20} />
-              <span><strong>Real-world projects</strong><small>Build portfolio-ready work</small></span>
+              <span><strong>Real-world projects</strong></span>
             </div>
             <div>
               <Users size={20} />
-              <span><strong>Live mentor access</strong><small>Practical guidance as you learn</small></span>
+              <span><strong>Live mentor access</strong></span>
             </div>
           </div>
 

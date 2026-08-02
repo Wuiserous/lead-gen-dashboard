@@ -2694,19 +2694,19 @@ p {
 }
 
 .conversion-hero-v2 {
-  min-height: min(760px, calc(100svh - 72px));
+  min-height: min(790px, calc(100svh - 72px));
   position: relative;
   isolation: isolate;
   align-items: center;
   grid-template-columns: minmax(0, 1.08fr) minmax(380px, 0.66fr);
-  gap: clamp(36px, 5vw, 76px);
+  gap: clamp(56px, 7vw, 110px);
   overflow: hidden;
-  padding-top: 44px;
-  padding-bottom: 48px;
+  padding-top: 64px;
+  padding-bottom: 64px;
   background:
-    radial-gradient(circle at 8% 22%, rgba(255, 180, 0, 0.14), transparent 24%),
-    radial-gradient(circle at 83% 8%, rgba(52, 103, 178, 0.2), transparent 26%),
-    linear-gradient(135deg, #061735 0%, #0a214a 55%, #071a3c 100%);
+    linear-gradient(90deg, rgba(5, 21, 48, 0.97) 0%, rgba(5, 25, 57, 0.92) 44%, rgba(5, 25, 57, 0.78) 72%, rgba(5, 25, 57, 0.84) 100%),
+    linear-gradient(180deg, rgba(7, 26, 60, 0.2), rgba(7, 26, 60, 0.82)),
+    url("/student-internship-hero.webp") center / cover no-repeat;
 }
 
 .conversion-hero-v2 > * {
@@ -2721,42 +2721,42 @@ p {
   right: -190px;
   bottom: -280px;
   z-index: -1;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.055);
   border-radius: 50%;
   box-shadow: 0 0 0 70px rgba(255, 255, 255, 0.018), 0 0 0 140px rgba(255, 255, 255, 0.012);
 }
 
 .conversion-copy-v2 .opportunity-kicker {
   border-color: rgba(255, 180, 0, 0.35);
-  background: rgba(255, 180, 0, 0.08);
+  background: rgba(7, 26, 60, 0.58);
   color: #ffe5a3;
 }
 
 .conversion-copy-v2 h1 {
-  max-width: 700px;
-  margin-top: 19px;
-  font-size: clamp(3rem, 5.45vw, 5.25rem);
-  line-height: 0.96;
+  max-width: 650px;
+  margin-top: 22px;
+  font-size: clamp(3rem, 4.7vw, 4.65rem);
+  line-height: 0.98;
 }
 
 .conversion-copy-v2 .hero-lead {
-  max-width: 630px;
-  margin-bottom: 17px;
+  max-width: 590px;
+  margin-bottom: 24px;
   color: #d2dced;
   font-size: clamp(1rem, 1.45vw, 1.14rem);
   line-height: 1.55;
 }
 
 .hero-trust-block {
-  max-width: 720px;
-  margin-bottom: 13px;
+  max-width: 670px;
+  margin-bottom: 20px;
 }
 
 .hero-trust-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 7px;
+  margin-bottom: 9px;
   color: #aebed5;
   font-size: 0.63rem;
   font-weight: 850;
@@ -2771,37 +2771,32 @@ p {
 .hero-trust-logos {
   display: grid;
   grid-template-columns: 1.4fr repeat(4, minmax(0, 0.78fr));
-  gap: 6px;
+  gap: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  padding: 7px;
+  background: rgba(6, 26, 59, 0.36);
+  backdrop-filter: blur(10px);
 }
 
 .hero-trust-logo {
   min-width: 0;
-  height: 70px;
+  height: 49px;
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.17);
-  border-radius: 9px;
-  padding: 17px 7px 5px;
-  background: #fff;
-}
-
-.hero-trust-logo > small {
-  position: absolute;
-  top: 5px;
-  left: 7px;
-  color: #758196;
-  font-size: 0.39rem;
-  font-weight: 900;
-  letter-spacing: 0.05em;
+  border: 0;
+  border-radius: 7px;
+  padding: 5px 7px;
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .hero-trust-logo img {
   width: 100%;
-  height: 43px !important;
+  height: 38px !important;
   object-fit: contain;
 }
 
@@ -2830,15 +2825,16 @@ p {
 }
 
 .hero-proof-grid-v2 {
-  gap: 9px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
 }
 
 .hero-proof-grid-v2 > div {
-  min-height: 72px;
+  min-height: 56px;
   min-width: 0;
   border-color: rgba(176, 199, 231, 0.2);
-  padding: 12px 13px;
-  background: rgba(12, 41, 86, 0.68);
+  padding: 10px;
+  background: rgba(8, 35, 76, 0.58);
   backdrop-filter: blur(8px);
 }
 
@@ -2852,13 +2848,19 @@ p {
 }
 
 .hero-proof-grid-v2 strong {
-  font-size: 0.81rem;
+  font-size: 0.69rem;
+  line-height: 1.25;
+}
+
+.hero-proof-grid-v2 small {
+  font-size: 0.54rem;
 }
 
 .invite-strip-v2 {
   min-width: min(100%, 430px);
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  padding-top: 15px;
+  margin-top: 18px;
+  border-top: 0;
+  padding-top: 0;
 }
 
 .invite-strip-v2 > span:nth-child(2) {
@@ -2877,7 +2879,9 @@ p {
 .conversion-action-v2 .registration-card {
   border: 0;
   border-radius: 18px;
-  box-shadow: 0 30px 85px rgba(0, 0, 0, 0.31);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 30px 85px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(12px);
 }
 
 .conversion-action-v2 .registration-card h2 {
@@ -3158,7 +3162,12 @@ p {
 @media (max-width: 840px) {
   .conversion-hero-v2 {
     grid-template-columns: 1fr;
-    padding-top: 45px;
+    gap: 46px;
+    padding-top: 52px;
+    padding-bottom: 58px;
+    background:
+      linear-gradient(180deg, rgba(5, 21, 48, 0.92) 0%, rgba(5, 25, 57, 0.84) 47%, rgba(5, 25, 57, 0.93) 100%),
+      url("/student-internship-hero.webp") 64% center / cover no-repeat;
   }
 
   .conversion-action-v2 {
@@ -3216,14 +3225,15 @@ p {
 
   .conversion-hero-v2 {
     min-height: auto;
-    gap: 33px;
-    padding: 32px 16px 46px;
+    gap: 42px;
+    padding: 38px 16px 50px;
   }
 
   .conversion-copy-v2 h1 {
     max-width: 360px;
-    margin: 15px 0 13px;
-    font-size: clamp(2.65rem, 13.5vw, 4rem);
+    margin: 19px 0 14px;
+    font-size: clamp(2.65rem, 12vw, 3.35rem);
+    line-height: 0.98;
   }
 
   .conversion-copy-v2 .hero-lead {
@@ -3233,7 +3243,7 @@ p {
 
   .hero-trust-block {
     max-width: 100%;
-    margin: 0 0 16px;
+    margin: 0 0 19px;
   }
 
   .hero-trust-title {
@@ -3245,11 +3255,11 @@ p {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 7px;
     overflow: visible;
-    padding: 0;
+    padding: 6px;
   }
 
   .hero-trust-logo {
-    height: 68px;
+    height: 49px;
     width: auto;
   }
 
@@ -3273,19 +3283,19 @@ p {
   }
 
   .hero-proof-grid-v2 > div {
-    min-height: 108px;
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 12px;
+    min-height: 72px;
+    align-items: center;
+    flex-direction: row;
+    padding: 10px;
   }
 
   .hero-proof-grid-v2 strong {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     line-height: 1.3;
   }
 
   .hero-proof-grid-v2 small {
-    font-size: 0.61rem;
+    font-size: 0.55rem;
     line-height: 1.35;
   }
 
