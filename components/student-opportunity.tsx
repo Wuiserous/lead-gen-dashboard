@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
 import { internshipDomains } from "@/lib/domains";
 import {
@@ -59,6 +60,13 @@ export function StudentOpportunity({
     setPopupOpen(true);
   }
 
+  function closeSignupPopup() {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setPopupOpen(false);
+  }
+
   function chooseDomain(value: string) {
     if (registered) return;
     setDomain(value);
@@ -79,7 +87,7 @@ export function StudentOpportunity({
 
     function handleScroll() {
       const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-      if (scrollable <= 0 || Date.now() - startedAt < 4500) return;
+      if (scrollable <= 0 || Date.now() - startedAt < 5000) return;
       if (window.scrollY / scrollable >= 0.4) triggerPopup();
     }
 
@@ -87,7 +95,7 @@ export function StudentOpportunity({
       if (event.clientY <= 0 && Date.now() - startedAt >= 8000) triggerPopup();
     }
 
-    const timer = window.setTimeout(triggerPopup, 4000);
+    const timer = window.setTimeout(triggerPopup, 5000);
     window.addEventListener("scroll", handleScroll, { passive: true });
     document.addEventListener("mouseout", handleExitIntent);
 
@@ -103,8 +111,20 @@ export function StudentOpportunity({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        setPopupOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeydown);
+
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeydown);
     };
   }, [popupOpen]);
 
@@ -250,7 +270,7 @@ export function StudentOpportunity({
         </div>
       </section>
 
-      {registered ? (
+      {registered && (
         <section className="post-registration-message post-registration-message-v2">
           <span><CheckCircle2 size={34} /></span>
           <div>
@@ -268,14 +288,19 @@ export function StudentOpportunity({
             )}
           </div>
         </section>
-      ) : (
-        <section className="domain-explorer domain-explorer-v2">
+      )}
+
+        <section className={`domain-explorer domain-explorer-v2 ${registered ? "domain-explorer-locked" : ""}`}>
           <div className="domain-section-heading domain-section-heading-v2">
             <div>
-              <span className="eyebrow">CHOOSE YOUR DIRECTION</span>
-              <h2>What do you want to build your career in?</h2>
+              <span className="eyebrow">{registered ? "YOUR SELECTION" : "CHOOSE YOUR DIRECTION"}</span>
+              <h2>{registered ? "Your internship domain is saved." : "What do you want to build your career in?"}</h2>
             </div>
-            <p><strong>23 paths.</strong> Pick the one you want practical experience in.</p>
+            <p>
+              {registered
+                ? "Registration complete. Your selected domain can no longer be changed here."
+                : <><strong>23 paths.</strong> Pick the one you want practical experience in.</>}
+            </p>
           </div>
           <div className="domain-card-grid domain-card-grid-v2">
             {visibleDomains.map((item) => (
@@ -284,14 +309,15 @@ export function StudentOpportunity({
                 key={item.name}
                 className={`domain-card domain-card-v2 ${domain === item.name ? "selected" : ""}`}
                 onClick={() => chooseDomain(item.name)}
+                disabled={registered}
               >
                 <span className={`domain-card-visual ${item.visual}`} aria-hidden="true" />
                 <span className="domain-card-copy">
                   <strong>{item.name}</strong>
                   <small>{item.description}</small>
                   <span>
-                    {domain === item.name ? "Selected" : "Choose domain"}
-                    {domain === item.name ? <Check size={15} /> : <ArrowRight size={15} />}
+                    {domain === item.name ? "Selected" : registered ? "Not selected" : "Choose domain"}
+                    {domain === item.name ? <Check size={15} /> : !registered ? <ArrowRight size={15} /> : null}
                   </span>
                 </span>
               </button>
@@ -307,7 +333,6 @@ export function StudentOpportunity({
             <ChevronDown size={18} className={showAllDomains ? "rotated" : ""} />
           </button>
         </section>
-      )}
 
       <section className="student-outcomes">
         <div className="student-outcomes-copy">
@@ -334,7 +359,10 @@ export function StudentOpportunity({
           <div className="student-signup-backdrop" aria-hidden="true" />
           <div className="student-signup-modal-card">
             <div className="student-signup-modal-topline">
-              <span><Sparkles size={14} /> Complete your registration to continue</span>
+              <span><Sparkles size={14} /> Register your interest</span>
+              <button type="button" aria-label="Close registration form" onClick={closeSignupPopup}>
+                <X size={18} />
+              </button>
             </div>
             <StudentRegistrationForm
               slug={slug}

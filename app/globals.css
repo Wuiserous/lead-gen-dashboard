@@ -546,6 +546,23 @@
   box-shadow: 0 12px 30px rgba(7, 26, 60, 0.1);
 }
 
+.domain-card:disabled {
+  cursor: default;
+  opacity: 0.62;
+  transform: none;
+  box-shadow: none;
+}
+
+.domain-card.selected:disabled {
+  border-color: var(--gold);
+  opacity: 1;
+  box-shadow: 0 12px 30px rgba(7, 26, 60, 0.08);
+}
+
+.domain-explorer-locked .domain-section-heading-v2 > p {
+  color: var(--green);
+}
+
 .domain-card-visual {
   display: block;
   background-image: url("/domain-atlas.webp");
@@ -3361,6 +3378,20 @@ p {
   color: #c58a00;
 }
 
+.student-signup-modal-topline > button {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: 0;
+  border-radius: 50%;
+  background: #eef2f7;
+  color: var(--navy);
+}
+
 .student-signup-modal-card .registration-card {
   border: 0;
   padding: 18px 24px 11px;
@@ -3369,6 +3400,58 @@ p {
 
 .student-signup-modal-card .registration-card h2 {
   font-size: 1.85rem;
+}
+
+.phone-confirmation-number {
+  margin-top: 20px;
+  border: 1px solid #d6dfeb;
+  border-radius: 12px;
+  padding: 17px;
+  background: #f4f7fb;
+  color: var(--navy);
+  font-size: 1.55rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.phone-confirmation-details {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.phone-confirmation-details > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid #e0e6ef;
+  border-radius: 9px;
+  padding: 10px 11px;
+}
+
+.phone-confirmation-details small {
+  color: #7b8799;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.phone-confirmation-details strong {
+  overflow-wrap: anywhere;
+  color: var(--navy);
+  font-size: 0.76rem;
+}
+
+.phone-confirmation-edit {
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 @keyframes signup-backdrop-in {
@@ -3718,6 +3801,15 @@ p {
 
   .student-signup-modal-card .registration-card h2 {
     font-size: 1.65rem;
+  }
+
+  .student-signup-modal-card input,
+  .student-signup-modal-card select {
+    font-size: 16px;
+  }
+
+  .phone-confirmation-number {
+    font-size: 1.35rem;
   }
 
   .registration-summary {
