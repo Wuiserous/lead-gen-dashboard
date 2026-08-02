@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
+import { reportingRangeStart } from "@/lib/reporting-date";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import type {
   AmbassadorPerformance,
@@ -19,25 +20,6 @@ const uuidPattern =
 
 function optionalUuid(value: string | null) {
   return value && uuidPattern.test(value) ? value : null;
-}
-
-function rangeStart(value: string | null) {
-  if (!value || value === "all") return null;
-  const daysBack = value === "today" ? 0 : value === "7d" ? 6 : value === "30d" ? 29 : null;
-  if (daysBack === null) return null;
-
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((item) => item.type === type)?.value);
-  const indiaMidnightUtc =
-    Date.UTC(part("year"), part("month") - 1, part("day")) -
-    330 * 60 * 1000;
-  return new Date(indiaMidnightUtc - daysBack * 86_400_000).toISOString();
 }
 
 function safeSearch(value: string | null) {
@@ -69,7 +51,7 @@ export async function GET(request: Request) {
   const requestedTeamId = optionalUuid(params.get("teamId"));
   const requestedSalesId = optionalUuid(params.get("memberId"));
   const ambassadorId = optionalUuid(params.get("groupId"));
-  const startAt = rangeStart(params.get("dateRange"));
+  const startAt = reportingRangeStart(params.get("dateRange"))?.toISOString() ?? null;
   const search = safeSearch(params.get("search"));
   const requestedPage = Math.max(1, Number(params.get("page")) || 1);
   const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize")) || 50));
@@ -130,7 +112,11 @@ export async function GET(request: Request) {
   if (teamId) registrationsQuery = registrationsQuery.eq("credited_team_id", teamId);
   if (salesId) registrationsQuery = registrationsQuery.eq("credited_sales_id", salesId);
   if (ambassadorId) registrationsQuery = registrationsQuery.eq("ambassador_id", ambassadorId);
-  if (startAt) registrationsQuery = registrationsQuery.gte("created_at", startAt);
+  if (startAt) {
+    registrationsQuery = registrationsQuery
+      .gte("created_at", startAt)
+      .lte("created_at", new Date().toISOString());
+  }
   if (search) {
     const pattern = `%${search}%`;
     registrationsQuery = registrationsQuery.or(

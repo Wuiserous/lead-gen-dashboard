@@ -31,6 +31,10 @@ import {
 import Papa from "papaparse";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import {
+  isWithinReportingRange,
+  type ReportingDateRange,
+} from "@/lib/reporting-date";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type {
   AppRole,
@@ -41,7 +45,7 @@ import type {
 
 type Tab = "overview" | "teams" | "employees" | "ambassadors" | "leads";
 type ModalName = "team" | "employee" | "import" | "ambassador" | null;
-type DateRange = "all" | "today" | "7d" | "30d";
+type DateRange = ReportingDateRange;
 
 const statusLabels: Record<RegistrationStatus, string> = {
   new: "New",
@@ -68,17 +72,7 @@ function formatDate(value: string) {
 }
 
 function inDateRange(value: string, range: DateRange) {
-  if (range === "all") return true;
-  const date = new Date(value);
-  const now = new Date();
-  if (range === "today") {
-    return date.toDateString() === now.toDateString();
-  }
-  const days = range === "7d" ? 7 : 30;
-  const start = new Date(now);
-  start.setDate(now.getDate() - (days - 1));
-  start.setHours(0, 0, 0, 0);
-  return date >= start;
+  return isWithinReportingRange(value, range);
 }
 
 function publicBaseUrl() {
@@ -242,7 +236,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     return (
       (teamFilter === "all" || ambassador.team_id === teamFilter) &&
       (memberFilter === "all" || ambassador.sales_id === memberFilter) &&
-      (groupFilter === "all" || ambassador.id === groupFilter)
+      (groupFilter === "all" || ambassador.id === groupFilter) &&
+      inDateRange(ambassador.created_at, dateRange)
     );
   });
 
@@ -450,7 +445,6 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                     setDateRange(value);
                     setPage(1);
                   }}
-                  hideDate
                 />
               }
               onViewGroup={(id) => {
@@ -659,12 +653,8 @@ function Overview({
             ))}
             {!ambassadors.length && (
               <EmptyState
-                title="No ambassadors yet"
-                text={
-                  data.user.role === "sales"
-                    ? "Open the Ambassadors tab to create your first Campus Ambassador."
-                    : "Ambassador progress will appear after Sales creates one."
-                }
+                title="No groups in view"
+                text="No groups match the selected team, member, group, and date filters."
               />
             )}
           </div>
@@ -679,7 +669,7 @@ function Overview({
           </div>
         )}
       </div>
-      <ReportingInsights data={data} ambassadors={ambassadors} />
+      <ReportingInsights data={data} />
     </section>
   );
 }
@@ -694,7 +684,6 @@ function ReportingFilters({
   onGroupChange,
   onMemberChange,
   onDateRangeChange,
-  hideDate = false,
 }: {
   data: DashboardData;
   teamFilter: string;
@@ -705,7 +694,6 @@ function ReportingFilters({
   onGroupChange: (value: string) => void;
   onMemberChange: (value: string) => void;
   onDateRangeChange: (value: DateRange) => void;
-  hideDate?: boolean;
 }) {
   const creators = data.employees.filter(
     (employee) =>
@@ -761,20 +749,18 @@ function ReportingFilters({
           ))}
         </select>
       </label>
-      {!hideDate && (
-        <label>
-          Date
-          <select
-            value={dateRange}
-            onChange={(event) => onDateRangeChange(event.target.value as DateRange)}
-          >
-            <option value="all">All time</option>
-            <option value="today">Today</option>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-          </select>
-        </label>
-      )}
+      <label>
+        Date
+        <select
+          value={dateRange}
+          onChange={(event) => onDateRangeChange(event.target.value as DateRange)}
+        >
+          <option value="all">All time</option>
+          <option value="today">Today</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+        </select>
+      </label>
     </div>
   );
 }
@@ -827,13 +813,7 @@ function Pagination({
   );
 }
 
-function ReportingInsights({
-  data,
-  ambassadors,
-}: {
-  data: DashboardData;
-  ambassadors: DashboardData["ambassadors"];
-}) {
+function ReportingInsights({ data }: { data: DashboardData }) {
   const creatorNames = new Map(
     data.employees.map((employee) => [employee.id, employee.full_name]),
   );
@@ -842,7 +822,9 @@ function ReportingInsights({
     count: item.count,
   }));
   const max = Math.max(1, ...days.map((day) => day.count));
-  const ambassadorsById = new Map(ambassadors.map((item) => [item.id, item]));
+  const ambassadorsById = new Map(
+    data.ambassadors.map((item) => [item.id, item]),
+  );
   const groupRows = data.summary.groupRankings.flatMap((ranking) => {
     const ambassador = ambassadorsById.get(ranking.ambassadorId);
     return ambassador
@@ -1291,12 +1273,8 @@ function AmbassadorsView({
         })}
         {!ambassadors.length && (
           <EmptyState
-            title="No Campus Ambassadors"
-            text={
-              data.user.role === "admin"
-                ? "Groups created by Team Leads and Sales will appear here."
-                : "Create your first group to generate an official referral link."
-            }
+            title="No groups in view"
+            text="No groups match the selected team, member, group, and date filters."
           />
         )}
       </div>

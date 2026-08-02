@@ -36,6 +36,10 @@ as $$
     where (p_team_id is null or a.team_id = p_team_id)
       and (p_sales_id is null or a.sales_id = p_sales_id)
       and (p_ambassador_id is null or a.id = p_ambassador_id)
+      and (
+        p_start_at is null
+        or (a.created_at >= p_start_at and a.created_at <= now())
+      )
   ),
   scoped_registrations as (
     select
@@ -48,7 +52,10 @@ as $$
     where (p_team_id is null or r.credited_team_id = p_team_id)
       and (p_sales_id is null or r.credited_sales_id = p_sales_id)
       and (p_ambassador_id is null or r.ambassador_id = p_ambassador_id)
-      and (p_start_at is null or r.created_at >= p_start_at)
+      and (
+        p_start_at is null
+        or (r.created_at >= p_start_at and r.created_at <= now())
+      )
       and (
         nullif(trim(p_search), '') is null
         or r.name ilike '%' || trim(p_search) || '%'
@@ -81,12 +88,12 @@ as $$
   ),
   ranked_groups as (
     select
-      sa.id,
-      count(sr.id) filter (where sr.status <> 'invalid')::integer as registration_count
-    from scoped_ambassadors sa
-    left join scoped_registrations sr on sr.ambassador_id = sa.id
-    group by sa.id
-    order by registration_count desc, sa.id
+      sr.ambassador_id as id,
+      count(*)::integer as registration_count
+    from scoped_registrations sr
+    where sr.status <> 'invalid'
+    group by sr.ambassador_id
+    order by registration_count desc, sr.ambassador_id
     limit 8
   ),
   group_data as (
