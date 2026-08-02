@@ -23,7 +23,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.png|persevex-logo.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  // API routes refresh and validate their own Supabase session. Keeping the
+  // proxy on only the login route avoids performing auth.getUser() twice for
+  // every dashboard read and mutation.
+  matcher: ["/"],
 };

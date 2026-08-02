@@ -61,6 +61,18 @@ export async function PATCH(
     );
   }
 
+  if (nextTeamId !== profile.team_id && profile.team_id) {
+    // The RPC publishes the new-team event. Publishing the previous team as
+    // well lets that Team Lead remove the transferred employee immediately.
+    await admin.from("activity_events").insert({
+      event_type: "employee_updated",
+      actor_id: actor.id,
+      team_id: profile.team_id,
+      sales_id: profile.role === "sales" ? id : null,
+      entity_id: id,
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }
 

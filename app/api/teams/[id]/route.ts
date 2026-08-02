@@ -40,19 +40,21 @@ export async function PATCH(
     .maybeSingle();
   if (error || !data) return errorResponse("Unable to update the team.", 500);
 
-  await admin.from("audit_events").insert({
-    actor_id: actor.id,
-    action: "team_updated",
-    entity_type: "team",
-    entity_id: id,
-    details: { active: body.active },
-  });
-  await admin.from("activity_events").insert({
-    event_type: "team_updated",
-    actor_id: actor.id,
-    team_id: id,
-    entity_id: id,
-  });
+  await Promise.all([
+    admin.from("audit_events").insert({
+      actor_id: actor.id,
+      action: "team_updated",
+      entity_type: "team",
+      entity_id: id,
+      details: { active: body.active },
+    }),
+    admin.from("activity_events").insert({
+      event_type: "team_updated",
+      actor_id: actor.id,
+      team_id: id,
+      entity_id: id,
+    }),
+  ]);
   return NextResponse.json({ team: data });
 }
 
@@ -95,18 +97,20 @@ export async function DELETE(
   const { error } = await admin.from("teams").delete().eq("id", id);
   if (error) return errorResponse("Unable to delete the team.", 500);
 
-  await admin.from("audit_events").insert({
-    actor_id: actor.id,
-    action: "team_deleted",
-    entity_type: "team",
-    entity_id: id,
-    details: { name: team.name },
-  });
-  await admin.from("activity_events").insert({
-    event_type: "team_deleted",
-    actor_id: actor.id,
-    entity_id: id,
-  });
+  await Promise.all([
+    admin.from("audit_events").insert({
+      actor_id: actor.id,
+      action: "team_deleted",
+      entity_type: "team",
+      entity_id: id,
+      details: { name: team.name },
+    }),
+    admin.from("activity_events").insert({
+      event_type: "team_deleted",
+      actor_id: actor.id,
+      entity_id: id,
+    }),
+  ]);
 
   return NextResponse.json({ ok: true });
 }

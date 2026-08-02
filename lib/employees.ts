@@ -80,20 +80,22 @@ export async function createEmployee(
     );
   }
 
-  await admin.from("audit_events").insert({
-    actor_id: actorId,
-    action: "employee_created",
-    entity_type: "profile",
-    entity_id: data.user.id,
-    details: { role, team_id: teamId },
-  });
-  await admin.from("activity_events").insert({
-    event_type: "employee_created",
-    actor_id: actorId,
-    team_id: teamId,
-    sales_id: role === "sales" ? data.user.id : null,
-    entity_id: data.user.id,
-  });
+  await Promise.all([
+    admin.from("audit_events").insert({
+      actor_id: actorId,
+      action: "employee_created",
+      entity_type: "profile",
+      entity_id: data.user.id,
+      details: { role, team_id: teamId },
+    }),
+    admin.from("activity_events").insert({
+      event_type: "employee_created",
+      actor_id: actorId,
+      team_id: teamId,
+      sales_id: role === "sales" ? data.user.id : null,
+      entity_id: data.user.id,
+    }),
+  ]);
 
   return {
     id: data.user.id,
@@ -103,5 +105,6 @@ export async function createEmployee(
     role,
     team_id: teamId,
     active: true,
+    created_at: new Date().toISOString(),
   };
 }

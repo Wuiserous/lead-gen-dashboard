@@ -36,18 +36,26 @@ import {
   type ReportingDateRange,
 } from "@/lib/reporting-date";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import {
+  clearDashboardBootstrap,
+  peekDashboardBootstrap,
+} from "@/lib/dashboard-bootstrap";
 import type {
+  AmbassadorPerformance,
   AppRole,
   DashboardActivityEvent,
   DashboardData,
   DashboardLiveUpdate,
+  Profile,
   Registration,
   RegistrationStatus,
+  TeamPerformance,
 } from "@/lib/types";
 
 type Tab = "overview" | "teams" | "employees" | "ambassadors" | "leads";
 type ModalName = "team" | "employee" | "import" | "ambassador" | null;
 type DateRange = ReportingDateRange;
+type DashboardUpdater = (updater: (current: DashboardData) => DashboardData) => void;
 
 const statusLabels: Record<RegistrationStatus, string> = {
   new: "New",
@@ -122,12 +130,27 @@ async function readError(response: Response) {
   }
 }
 
+async function dashboardMutation(input: RequestInfo | URL, init?: RequestInit) {
+  try {
+    return await fetch(input, init);
+  } catch {
+    return new Response(
+      JSON.stringify({ error: "Unable to reach the server. Your change was reverted." }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
+}
+
 export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const router = useRouter();
-  const [data, setData] = useState<DashboardData | null>(null);
+  const initialData = useMemo(() => {
+    const cached = peekDashboardBootstrap();
+    return cached?.user.role === expectedRole ? cached : null;
+  }, [expectedRole]);
+  const [data, setData] = useState<DashboardData | null>(initialData);
   const [tab, setTab] = useState<Tab>("overview");
   const [modal, setModal] = useState<ModalName>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [live, setLive] = useState(false);
@@ -139,7 +162,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [memberFilter, setMemberFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [page, setPage] = useState(1);
-  const loadedOnce = useRef(false);
+  const loadedOnce = useRef(Boolean(initialData));
   const loadSequence = useRef(0);
   const visibleLoadInFlight = useRef(false);
   const dataRevision = useRef(0);
@@ -156,9 +179,21 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   ].join("|");
   const reportingViewKeyRef = useRef(reportingViewKey);
 
+  const updateDashboard = useCallback(
+    (updater: (current: DashboardData) => DashboardData) => {
+      dataRevision.current += 1;
+      setData((current) => (current ? updater(current) : current));
+    },
+    [],
+  );
+
   useEffect(() => {
     reportingViewKeyRef.current = reportingViewKey;
   }, [reportingViewKey]);
+
+  useEffect(() => {
+    clearDashboardBootstrap();
+  }, []);
 
   const load = useCallback(async (quiet = false, silent = false) => {
     if (silent && visibleLoadInFlight.current) return;
@@ -252,7 +287,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
 
     const isRegistrationEvent = event.event_type.startsWith("registration_");
     const isAmbassadorEvent = event.event_type.startsWith("ambassador_");
-    if (!isRegistrationEvent && !isAmbassadorEvent) {
+    const isEmployeeEvent = event.event_type.startsWith("employee_");
+    const isTeamEvent = event.event_type.startsWith("team_");
+    if (!isRegistrationEvent && !isAmbassadorEvent && !isEmployeeEvent && !isTeamEvent) {
       await load(true, true);
       scheduleReconciliation();
       return;
@@ -260,10 +297,12 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
 
     const affectedGroupId =
       event.ambassador_id ?? (isAmbassadorEvent ? event.entity_id : null);
-    const matchesScope =
-      (teamFilter === "all" || event.team_id === teamFilter) &&
-      (memberFilter === "all" || event.sales_id === memberFilter) &&
-      (groupFilter === "all" || affectedGroupId === groupFilter);
+    const affectedTeamId = event.team_id ?? (isTeamEvent ? event.entity_id : null);
+    const managementEvent = isTeamEvent || isEmployeeEvent;
+    const matchesScope = managementEvent ||
+      ((teamFilter === "all" || affectedTeamId === teamFilter) &&
+        (memberFilter === "all" || event.sales_id === memberFilter) &&
+        (groupFilter === "all" || affectedGroupId === groupFilter));
     if (!matchesScope) return;
 
     const params = new URLSearchParams({
@@ -295,7 +334,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
 
     const update = (await response.json()) as DashboardLiveUpdate;
     if (reportingViewKeyRef.current !== viewKeyAtStart) return;
-    const applySummary = update.event.id >= latestSummaryEvent.current;
+    const applySummary = Boolean(update.summary && update.pagination) &&
+      update.event.id >= latestSummaryEvent.current;
     if (applySummary) latestSummaryEvent.current = update.event.id;
     dataRevision.current += 1;
     setData((current) => {
@@ -344,13 +384,36 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
         );
       }
 
+      let employees = current.employees;
+      if (update.event.event_type === "employee_deleted" && update.event.entity_id) {
+        employees = employees.filter((item) => item.id !== update.event.entity_id);
+      }
+      if (update.profile) {
+        const profileIsVisible =
+          current.user.role === "admin" ||
+          update.profile.team_id === current.user.team_id;
+        employees = profileIsVisible
+          ? upsertById(employees, update.profile).sort(
+              (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at),
+            )
+          : employees.filter((item) => item.id !== update.profile?.id);
+      }
+
       let teams = current.teams;
+      if (update.event.event_type === "team_deleted" && update.event.entity_id) {
+        teams = teams.filter((item) => item.id !== update.event.entity_id);
+      }
       if (update.teamPerformance) {
         teams = upsertById(teams, update.teamPerformance).sort((left, right) =>
           left.name.localeCompare(right.name),
         );
       }
       let salesPerformance = current.salesPerformance;
+      if (update.event.event_type === "employee_deleted" && update.event.entity_id) {
+        salesPerformance = salesPerformance.filter(
+          (item) => item.id !== update.event.entity_id,
+        );
+      }
       if (update.salesPerformance) {
         salesPerformance = upsertById(
           salesPerformance,
@@ -362,13 +425,14 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
         ...current,
         registrations,
         ambassadors,
+        employees,
         teams,
         salesPerformance,
-        summary: applySummary ? update.summary : current.summary,
-        pagination: applySummary ? update.pagination : current.pagination,
+        summary: applySummary && update.summary ? update.summary : current.summary,
+        pagination: applySummary && update.pagination ? update.pagination : current.pagination,
       };
     });
-    if (applySummary && update.pagination.page !== page) {
+    if (applySummary && update.pagination && update.pagination.page !== page) {
       setPage(update.pagination.page);
     }
     scheduleReconciliation();
@@ -389,6 +453,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   }, [search]);
 
   useEffect(() => {
+    if (loadedOnce.current) return;
     const initialLoad = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(initialLoad);
   }, [load]);
@@ -622,7 +687,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                   }}
                 />
               }
-              onRefresh={() => void load(true)}
+              onUpdate={updateDashboard}
+              onReconcile={scheduleReconciliation}
             />
           )}
           {tab === "teams" && (
@@ -636,7 +702,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 setPage(1);
                 setTab("overview");
               }}
-              onRefresh={() => void load(true)}
+              onUpdate={updateDashboard}
+              onReconcile={scheduleReconciliation}
             />
           )}
           {tab === "employees" && (
@@ -650,7 +717,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 setPage(1);
                 setTab("ambassadors");
               }}
-              onRefresh={() => void load(true)}
+              onUpdate={updateDashboard}
+              onReconcile={scheduleReconciliation}
             />
           )}
           {tab === "ambassadors" && (
@@ -690,7 +758,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 setPage(1);
                 setTab("leads");
               }}
-              onRefresh={scheduleReconciliation}
+              onUpdate={updateDashboard}
+              onReconcile={scheduleReconciliation}
             />
           )}
           {tab === "leads" && (
@@ -739,7 +808,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               <LeadsTable
                 registrations={filteredRegistrations}
                 canDelete={data.user.role !== "sales"}
-                onRefresh={scheduleReconciliation}
+                onUpdate={updateDashboard}
+                onReconcile={scheduleReconciliation}
               />
               <Pagination
                 page={data.pagination.page}
@@ -756,32 +826,233 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
         <Modal onClose={() => setModal(null)}>
           {modal === "team" && (
             <TeamForm
-              onDone={() => {
+              onPending={(team) => {
                 setModal(null);
-                void load(true);
+                updateDashboard((current) => ({
+                  ...current,
+                  teams: upsertById(current.teams, team).sort((left, right) =>
+                    left.name.localeCompare(right.name),
+                  ),
+                }));
+              }}
+              onDone={(pendingId, team) => {
+                updateDashboard((current) => ({
+                  ...current,
+                  teams: upsertById(
+                    current.teams.filter((item) => item.id !== pendingId),
+                    team,
+                  ).sort((left, right) => left.name.localeCompare(right.name)),
+                }));
+                scheduleReconciliation();
+              }}
+              onFailed={(pendingId, message) => {
+                updateDashboard((current) => ({
+                  ...current,
+                  teams: current.teams.filter((item) => item.id !== pendingId),
+                }));
+                setError(message);
               }}
             />
           )}
           {modal === "employee" && (
             <EmployeeForm
               teams={data.teams}
-              onDone={() => {
+              onPending={(employee) => {
                 setModal(null);
-                void load(true);
+                updateDashboard((current) => {
+                  const performance = {
+                    id: employee.id,
+                    full_name: employee.full_name,
+                    email: employee.email,
+                    phone: employee.phone,
+                    team_id: employee.team_id,
+                    active: true,
+                    ambassador_count: 0,
+                    active_ambassador_count: 0,
+                    registration_count: 0,
+                    qualified_ambassador_count: 0,
+                  };
+                  return {
+                    ...current,
+                    employees: upsertById(current.employees, employee),
+                    teams: current.teams.map((team) =>
+                      team.id === employee.team_id && employee.role === "sales"
+                        ? { ...team, sales_count: team.sales_count + 1 }
+                        : team,
+                    ),
+                    salesPerformance:
+                      employee.role === "sales"
+                        ? upsertById(current.salesPerformance, performance)
+                        : current.salesPerformance,
+                  };
+                });
+              }}
+              onDone={(pendingId, employee) => {
+                updateDashboard((current) => ({
+                  ...current,
+                  employees: upsertById(
+                    current.employees.filter((item) => item.id !== pendingId),
+                    employee,
+                  ),
+                  salesPerformance: current.salesPerformance.map((member) =>
+                    member.id === pendingId
+                      ? {
+                          ...member,
+                          id: employee.id,
+                          full_name: employee.full_name,
+                          email: employee.email,
+                          phone: employee.phone,
+                          team_id: employee.team_id,
+                        }
+                      : member,
+                  ),
+                }));
+                scheduleReconciliation();
+              }}
+              onFailed={(pendingEmployee, message) => {
+                updateDashboard((current) => ({
+                  ...current,
+                  employees: current.employees.filter(
+                    (item) => item.id !== pendingEmployee.id,
+                  ),
+                  salesPerformance: current.salesPerformance.filter(
+                    (member) => member.id !== pendingEmployee.id,
+                  ),
+                  teams: current.teams.map((team) =>
+                    pendingEmployee.role === "sales" &&
+                    team.id === pendingEmployee.team_id
+                      ? { ...team, sales_count: Math.max(0, team.sales_count - 1) }
+                      : team,
+                  ),
+                }));
+                setError(message);
               }}
             />
           )}
           {modal === "import" && (
             <EmployeeImport
               teams={data.teams}
-              onDone={() => void load(true)}
+              onDone={(employees) => {
+                updateDashboard((current) => {
+                  const newEmployees = employees.filter(
+                    (employee) => !current.employees.some((item) => item.id === employee.id),
+                  );
+                  const sales = newEmployees.filter((employee) => employee.role === "sales");
+                  return {
+                    ...current,
+                    employees: [
+                      ...newEmployees,
+                      ...current.employees.filter(
+                        (employee) => !newEmployees.some((item) => item.id === employee.id),
+                      ),
+                    ],
+                    teams: current.teams.map((team) => ({
+                      ...team,
+                      sales_count:
+                        team.sales_count +
+                        sales.filter((employee) => employee.team_id === team.id).length,
+                    })),
+                    salesPerformance: [
+                      ...sales.map((employee) => ({
+                        id: employee.id,
+                        full_name: employee.full_name,
+                        email: employee.email,
+                        phone: employee.phone,
+                        team_id: employee.team_id,
+                        active: true,
+                        ambassador_count: 0,
+                        active_ambassador_count: 0,
+                        registration_count: 0,
+                        qualified_ambassador_count: 0,
+                      })),
+                      ...current.salesPerformance.filter(
+                        (member) => !sales.some((employee) => employee.id === member.id),
+                      ),
+                    ],
+                  };
+                });
+                scheduleReconciliation();
+              }}
             />
           )}
           {modal === "ambassador" && (
             <AmbassadorForm
-              onDone={() => {
+              user={data.user}
+              target={data.defaultTarget}
+              onPending={(ambassador) => {
                 setModal(null);
-                void load(true);
+                updateDashboard((current) => {
+                  return {
+                    ...current,
+                    ambassadors: upsertById(current.ambassadors, ambassador),
+                    teams: current.teams.map((team) =>
+                      team.id === ambassador.team_id
+                        ? { ...team, ambassador_count: team.ambassador_count + 1 }
+                        : team,
+                    ),
+                    salesPerformance: current.salesPerformance.map((member) =>
+                      member.id === ambassador.sales_id
+                        ? {
+                            ...member,
+                            ambassador_count: member.ambassador_count + 1,
+                            active_ambassador_count: member.active_ambassador_count + 1,
+                          }
+                        : member,
+                    ),
+                    summary: {
+                      ...current.summary,
+                      ambassadorCount: current.summary.ambassadorCount + 1,
+                      activeAmbassadorCount: current.summary.activeAmbassadorCount + 1,
+                    },
+                  };
+                });
+              }}
+              onDone={(pendingId, ambassador) => {
+                updateDashboard((current) => ({
+                  ...current,
+                  ambassadors: upsertById(
+                    current.ambassadors.filter((item) => item.id !== pendingId),
+                    ambassador,
+                  ),
+                }));
+                scheduleReconciliation();
+              }}
+              onFailed={(pendingAmbassador, message) => {
+                updateDashboard((current) => ({
+                  ...current,
+                  ambassadors: current.ambassadors.filter(
+                    (item) => item.id !== pendingAmbassador.id,
+                  ),
+                  teams: current.teams.map((team) =>
+                    team.id === pendingAmbassador.team_id
+                      ? {
+                          ...team,
+                          ambassador_count: Math.max(0, team.ambassador_count - 1),
+                        }
+                      : team,
+                  ),
+                  salesPerformance: current.salesPerformance.map((member) =>
+                    member.id === pendingAmbassador.sales_id
+                      ? {
+                          ...member,
+                          ambassador_count: Math.max(0, member.ambassador_count - 1),
+                          active_ambassador_count: Math.max(
+                            0,
+                            member.active_ambassador_count - 1,
+                          ),
+                        }
+                      : member,
+                  ),
+                  summary: {
+                    ...current.summary,
+                    ambassadorCount: Math.max(0, current.summary.ambassadorCount - 1),
+                    activeAmbassadorCount: Math.max(
+                      0,
+                      current.summary.activeAmbassadorCount - 1,
+                    ),
+                  },
+                }));
+                setError(message);
               }}
             />
           )}
@@ -809,12 +1080,14 @@ function Overview({
   data,
   ambassadors,
   filters,
-  onRefresh,
+  onUpdate,
+  onReconcile,
 }: {
   data: DashboardData;
   ambassadors: DashboardData["ambassadors"];
   filters: React.ReactNode;
-  onRefresh: () => void;
+  onUpdate: DashboardUpdater;
+  onReconcile: () => void;
 }) {
   return (
     <section className="overview-stack">
@@ -902,7 +1175,10 @@ function Overview({
           <div className="panel settings-panel">
             <DefaultTargetForm
               value={data.defaultTarget}
-              onDone={onRefresh}
+              onChange={(target) =>
+                onUpdate((current) => ({ ...current, defaultTarget: target }))
+              }
+              onReconcile={onReconcile}
             />
           </div>
         )}
@@ -1136,11 +1412,13 @@ function MetricCard({
 function TeamsView({
   data,
   onViewTeam,
-  onRefresh,
+  onUpdate,
+  onReconcile,
 }: {
   data: DashboardData;
   onViewTeam: (id: string) => void;
-  onRefresh: () => void;
+  onUpdate: DashboardUpdater;
+  onReconcile: () => void;
 }) {
   const teamLeadByTeam = new Map(
     data.employees
@@ -1148,16 +1426,28 @@ function TeamsView({
       .map((employee) => [employee.team_id, employee]),
   );
   async function toggleTeam(id: string, active: boolean) {
-    const response = await fetch(`/api/teams/${id}`, {
+    onUpdate((current) => ({
+      ...current,
+      teams: current.teams.map((team) =>
+        team.id === id ? { ...team, active } : team,
+      ),
+    }));
+    const response = await dashboardMutation(`/api/teams/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ active }),
     });
     if (!response.ok) {
+      onUpdate((current) => ({
+        ...current,
+        teams: current.teams.map((team) =>
+          team.id === id ? { ...team, active: !active } : team,
+        ),
+      }));
       window.alert(await readError(response));
       return;
     }
-    onRefresh();
+    onReconcile();
   }
 
   async function removeTeam(id: string, name: string) {
@@ -1166,12 +1456,25 @@ function TeamsView({
     );
     if (!confirmed) return;
 
-    const response = await fetch(`/api/teams/${id}`, { method: "DELETE" });
+    const removedTeam = data.teams.find((team) => team.id === id);
+    onUpdate((current) => ({
+      ...current,
+      teams: current.teams.filter((team) => team.id !== id),
+    }));
+    const response = await dashboardMutation(`/api/teams/${id}`, { method: "DELETE" });
     if (!response.ok) {
+      if (removedTeam) {
+        onUpdate((current) => ({
+          ...current,
+          teams: [removedTeam, ...current.teams].sort((left, right) =>
+            left.name.localeCompare(right.name),
+          ),
+        }));
+      }
       window.alert(await readError(response));
       return;
     }
-    onRefresh();
+    onReconcile();
   }
   return (
     <section>
@@ -1184,12 +1487,13 @@ function TeamsView({
       <div className="card-grid">
         {data.teams.map((team) => {
           const lead = teamLeadByTeam.get(team.id);
+          const pending = team.id.startsWith("pending-");
           return (
             <article className="team-card" key={team.id}>
               <div className="team-card-head">
                 <span className="team-icon"><Building2 size={21} /></span>
                 <span className={`status-dot ${team.active ? "active" : ""}`}>
-                  {team.active ? "Active" : "Inactive"}
+                  {pending ? "Creating" : team.active ? "Active" : "Inactive"}
                 </span>
               </div>
               <h3>{team.name}</h3>
@@ -1203,18 +1507,21 @@ function TeamsView({
                 <button
                   className="primary-button"
                   onClick={() => onViewTeam(team.id)}
+                  disabled={pending}
                 >
                   <BarChart3 size={16} /> View performance
                 </button>
                 <button
                   className="team-toggle"
                   onClick={() => void toggleTeam(team.id, !team.active)}
+                  disabled={pending}
                 >
                   {team.active ? "Deactivate team" : "Reactivate team"}
                 </button>
                 <button
                   className="danger-button"
                   onClick={() => void removeTeam(team.id, team.name)}
+                  disabled={pending}
                 >
                   <Trash2 size={16} /> Delete team
                 </button>
@@ -1233,25 +1540,118 @@ function TeamsView({
 function EmployeesView({
   data,
   onViewMember,
-  onRefresh,
+  onUpdate,
+  onReconcile,
 }: {
   data: DashboardData;
   onViewMember: (id: string) => void;
-  onRefresh: () => void;
+  onUpdate: DashboardUpdater;
+  onReconcile: () => void;
 }) {
   const teamNames = new Map(data.teams.map((team) => [team.id, team.name]));
 
   async function patchEmployee(id: string, body: Record<string, unknown>) {
-    const response = await fetch(`/api/employees/${id}`, {
+    const previous = data.employees.find((employee) => employee.id === id);
+    if (!previous) return;
+    const previousPerformance = data.salesPerformance.find(
+      (member) => member.id === id,
+    );
+    const nextTeamId =
+      typeof body.teamId === "string" ? body.teamId : previous.team_id;
+    const nextActive =
+      typeof body.active === "boolean" ? body.active : previous.active;
+    const teamChanged = nextTeamId !== previous.team_id;
+    const ambassadorCount = previousPerformance?.ambassador_count ?? 0;
+    onUpdate((current) => ({
+      ...current,
+      employees: current.employees.map((employee) =>
+        employee.id === id
+          ? {
+              ...employee,
+              ...(typeof body.active === "boolean" ? { active: body.active } : {}),
+              ...(typeof body.teamId === "string" ? { team_id: body.teamId } : {}),
+            }
+          : employee,
+      ),
+      salesPerformance: current.salesPerformance.map((member) =>
+        member.id === id
+          ? { ...member, team_id: nextTeamId, active: nextActive }
+          : member,
+      ),
+      ambassadors: teamChanged
+        ? current.ambassadors.map((ambassador) =>
+            ambassador.sales_id === id && nextTeamId
+              ? { ...ambassador, team_id: nextTeamId }
+              : ambassador,
+          )
+        : current.ambassadors,
+      teams: current.teams.map((team) => {
+        if (previous.role !== "sales") return team;
+        const salesDelta =
+          (nextActive && team.id === nextTeamId ? 1 : 0) -
+          (previous.active && team.id === previous.team_id ? 1 : 0);
+        const ambassadorDelta = teamChanged
+          ? (team.id === nextTeamId ? ambassadorCount : 0) -
+            (team.id === previous.team_id ? ambassadorCount : 0)
+          : 0;
+        return salesDelta || ambassadorDelta
+          ? {
+              ...team,
+              sales_count: Math.max(0, team.sales_count + salesDelta),
+              ambassador_count: Math.max(
+                0,
+                team.ambassador_count + ambassadorDelta,
+              ),
+            }
+          : team;
+      }),
+    }));
+    const response = await dashboardMutation(`/api/employees/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (!response.ok) {
+      onUpdate((current) => ({
+        ...current,
+        employees: current.employees.map((employee) =>
+          employee.id === id ? previous : employee,
+        ),
+        salesPerformance: current.salesPerformance.map((member) =>
+          member.id === id && previousPerformance ? previousPerformance : member,
+        ),
+        ambassadors: teamChanged
+          ? current.ambassadors.map((ambassador) =>
+              ambassador.sales_id === id && previous.team_id
+                ? { ...ambassador, team_id: previous.team_id }
+                : ambassador,
+            )
+          : current.ambassadors,
+        teams: current.teams.map((team) => {
+          if (previous.role !== "sales") return team;
+          const salesDelta =
+            (previous.active && team.id === previous.team_id ? 1 : 0) -
+            (nextActive && team.id === nextTeamId ? 1 : 0);
+          const ambassadorDelta = teamChanged
+            ? (team.id === previous.team_id ? ambassadorCount : 0) -
+              (team.id === nextTeamId ? ambassadorCount : 0)
+            : 0;
+          return salesDelta || ambassadorDelta
+            ? {
+                ...team,
+                sales_count: Math.max(0, team.sales_count + salesDelta),
+                ambassador_count: Math.max(
+                  0,
+                  team.ambassador_count + ambassadorDelta,
+                ),
+              }
+            : team;
+        }),
+      }));
       window.alert(await readError(response));
       return;
     }
-    onRefresh();
+    onReconcile();
   }
 
   async function removeEmployee(id: string, name: string) {
@@ -1260,14 +1660,40 @@ function EmployeesView({
     );
     if (!confirmed) return;
 
-    const response = await fetch(`/api/employees/${id}`, {
+    const removedEmployee = data.employees.find((employee) => employee.id === id);
+    const removedPerformance = data.salesPerformance.find((member) => member.id === id);
+    onUpdate((current) => ({
+      ...current,
+      employees: current.employees.filter((employee) => employee.id !== id),
+      salesPerformance: current.salesPerformance.filter((member) => member.id !== id),
+      teams: current.teams.map((team) =>
+        removedEmployee?.role === "sales" && team.id === removedEmployee.team_id
+          ? { ...team, sales_count: Math.max(0, team.sales_count - 1) }
+          : team,
+      ),
+    }));
+    const response = await dashboardMutation(`/api/employees/${id}`, {
       method: "DELETE",
     });
     if (!response.ok) {
+      if (removedEmployee) {
+        onUpdate((current) => ({
+          ...current,
+          employees: [removedEmployee, ...current.employees],
+          salesPerformance: removedPerformance
+            ? [removedPerformance, ...current.salesPerformance]
+            : current.salesPerformance,
+          teams: current.teams.map((team) =>
+            removedEmployee.role === "sales" && team.id === removedEmployee.team_id
+              ? { ...team, sales_count: team.sales_count + 1 }
+              : team,
+          ),
+        }));
+      }
       window.alert(await readError(response));
       return;
     }
-    onRefresh();
+    onReconcile();
   }
 
   return (
@@ -1287,6 +1713,7 @@ function EmployeesView({
           <span>Employee</span><span>Role</span><span>Team</span><span>Status</span><span>Performance</span><span />
         </div>
         {data.employees.map((employee) => {
+          const pending = employee.id.startsWith("pending-");
           const performance = data.salesPerformance.find(
             (item) => item.id === employee.id,
           );
@@ -1300,6 +1727,7 @@ function EmployeesView({
               {data.user.role === "admin" && employee.role !== "admin" ? (
                 <select
                   value={employee.team_id ?? ""}
+                  disabled={pending}
                   onChange={(event) =>
                     void patchEmployee(employee.id, { teamId: event.target.value })
                   }
@@ -1313,7 +1741,7 @@ function EmployeesView({
                 <span>{employee.team_id ? teamNames.get(employee.team_id) : "All teams"}</span>
               )}
               <span className={`status-dot ${employee.active ? "active" : ""}`}>
-                {employee.active ? "Active" : "Suspended"}
+                {pending ? "Creating" : employee.active ? "Active" : "Suspended"}
               </span>
               <span>
                 {performance
@@ -1333,6 +1761,7 @@ function EmployeesView({
                   <>
                     <button
                       className="text-button danger-text"
+                      disabled={pending}
                       onClick={() =>
                         void patchEmployee(employee.id, { active: !employee.active })
                       }
@@ -1342,6 +1771,7 @@ function EmployeesView({
                     <button
                       className="icon-button danger-icon"
                       title="Delete employee"
+                      disabled={pending}
                       onClick={() =>
                         void removeEmployee(employee.id, employee.full_name)
                       }
@@ -1364,28 +1794,60 @@ function AmbassadorsView({
   ambassadors,
   filters,
   onViewGroup,
-  onRefresh,
+  onUpdate,
+  onReconcile,
 }: {
   data: DashboardData;
   ambassadors: DashboardData["ambassadors"];
   filters: React.ReactNode;
   onViewGroup: (id: string) => void;
-  onRefresh: () => void;
+  onUpdate: DashboardUpdater;
+  onReconcile: () => void;
 }) {
   const creatorNames = new Map(
     data.employees.map((employee) => [employee.id, employee.full_name]),
   );
   async function update(id: string, body: Record<string, unknown>) {
-    const response = await fetch(`/api/ambassadors/${id}`, {
+    const previous = data.ambassadors.find((ambassador) => ambassador.id === id);
+    const optimisticStatus =
+      body.status === "active" || body.status === "paused" ? body.status : null;
+    if (optimisticStatus) {
+      onUpdate((current) => ({
+        ...current,
+        ambassadors: current.ambassadors.map((ambassador) =>
+          ambassador.id === id ? { ...ambassador, status: optimisticStatus } : ambassador,
+        ),
+      }));
+    }
+    const response = await dashboardMutation(`/api/ambassadors/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (!response.ok) {
+      if (previous) {
+        onUpdate((current) => ({
+          ...current,
+          ambassadors: current.ambassadors.map((ambassador) =>
+            ambassador.id === id ? previous : ambassador,
+          ),
+        }));
+      }
       window.alert(await readError(response));
       return;
     }
-    onRefresh();
+    const payload = await response.json() as {
+      ambassador?: Partial<AmbassadorPerformance> & { id: string };
+    };
+    if (payload.ambassador) {
+      onUpdate((current) => ({
+        ...current,
+        ambassadors: current.ambassadors.map((ambassador) =>
+          ambassador.id === id ? { ...ambassador, ...payload.ambassador } : ambassador,
+        ),
+      }));
+    }
+    onReconcile();
   }
 
   async function copy(value: string) {
@@ -1402,14 +1864,56 @@ function AmbassadorsView({
     );
     if (!confirmed) return;
 
-    const response = await fetch(`/api/ambassadors/${id}`, {
+    const removedAmbassador = data.ambassadors.find((item) => item.id === id);
+    const removedRegistrations = data.registrations.filter(
+      (registration) => registration.ambassador_id === id,
+    );
+    onUpdate((current) => ({
+      ...current,
+      ambassadors: current.ambassadors.filter((item) => item.id !== id),
+      registrations: current.registrations.filter(
+        (registration) => registration.ambassador_id !== id,
+      ),
+      teams: current.teams.map((team) =>
+        removedAmbassador && team.id === removedAmbassador.team_id
+          ? {
+              ...team,
+              ambassador_count: Math.max(0, team.ambassador_count - 1),
+              registration_count: Math.max(
+                0,
+                team.registration_count - removedAmbassador.registration_count,
+              ),
+            }
+          : team,
+      ),
+    }));
+    const response = await dashboardMutation(`/api/ambassadors/${id}`, {
       method: "DELETE",
     });
     if (!response.ok) {
+      if (removedAmbassador) {
+        onUpdate((current) => ({
+          ...current,
+          ambassadors: [removedAmbassador, ...current.ambassadors],
+          registrations: [...removedRegistrations, ...current.registrations].sort(
+            (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at),
+          ),
+          teams: current.teams.map((team) =>
+            team.id === removedAmbassador.team_id
+              ? {
+                  ...team,
+                  ambassador_count: team.ambassador_count + 1,
+                  registration_count:
+                    team.registration_count + removedAmbassador.registration_count,
+                }
+              : team,
+          ),
+        }));
+      }
       window.alert(await readError(response));
       return;
     }
-    onRefresh();
+    onReconcile();
   }
 
   return (
@@ -1423,6 +1927,7 @@ function AmbassadorsView({
       {filters}
       <div className="ambassador-grid">
         {ambassadors.map((ambassador) => {
+          const pending = ambassador.id.startsWith("pending-");
           const link = `${publicBaseUrl()}/join/${ambassador.public_slug}`;
           const progressLink = `${publicBaseUrl()}/ca/${ambassador.progress_key}`;
           const draft = `Hi! Persevex is accepting student registrations for internship and career opportunities across 23 domains, real-world projects, live mentor access, and up to INR 18,000-25,000 stipend based upon performance.\n\nChoose your preferred domain and register through my official invitation:\n${link}`;
@@ -1440,7 +1945,7 @@ function AmbassadorsView({
                   <small>Created by {creatorNames.get(ambassador.sales_id) ?? "Team member"}</small>
                 </div>
                 <span className={`status-dot ${ambassador.status === "active" ? "active" : ""}`}>
-                  {ambassador.status}
+                  {pending ? "creating" : ambassador.status}
                 </span>
               </div>
               <div className="ambassador-progress-line">
@@ -1454,13 +1959,14 @@ function AmbassadorsView({
               </div>
               <div className="mini-track large"><span style={{ width: `${percentage}%` }} /></div>
               <div className="link-actions">
-                <button onClick={() => void copy(draft)}><Copy size={16} /> WhatsApp draft</button>
-                <button onClick={() => void copy(link)}><Link2 size={16} /> Referral link</button>
-                <button onClick={() => void copy(progressLink)}><Target size={16} /> Progress link</button>
+                <button disabled={pending} onClick={() => void copy(draft)}><Copy size={16} /> WhatsApp draft</button>
+                <button disabled={pending} onClick={() => void copy(link)}><Link2 size={16} /> Referral link</button>
+                <button disabled={pending} onClick={() => void copy(progressLink)}><Target size={16} /> Progress link</button>
               </div>
               <button
                 className="view-group-button"
                 onClick={() => onViewGroup(ambassador.id)}
+                disabled={pending}
               >
                 View registrations from this group <ChevronRight size={16} />
               </button>
@@ -1469,6 +1975,7 @@ function AmbassadorsView({
                 <div>
                   <button
                     className="icon-button"
+                    disabled={pending}
                     title={ambassador.status === "active" ? "Pause link" : "Reactivate link"}
                     onClick={() =>
                       void update(ambassador.id, {
@@ -1480,6 +1987,7 @@ function AmbassadorsView({
                   </button>
                   <button
                     className="icon-button"
+                    disabled={pending}
                     title="Regenerate private progress link"
                     onClick={() => {
                       if (window.confirm("Replace the existing private progress link?")) {
@@ -1492,6 +2000,7 @@ function AmbassadorsView({
                   {data.user.role !== "sales" && (
                     <button
                       className="icon-button danger-icon"
+                      disabled={pending}
                       title="Delete group and registrations"
                       onClick={() =>
                         void remove(
@@ -1523,11 +2032,13 @@ function AmbassadorsView({
 function LeadsTable({
   registrations,
   canDelete,
-  onRefresh,
+  onUpdate,
+  onReconcile,
 }: {
   registrations: Registration[];
   canDelete: boolean;
-  onRefresh: () => void;
+  onUpdate: DashboardUpdater;
+  onReconcile: () => void;
 }) {
   return (
     <div className="data-table">
@@ -1539,7 +2050,8 @@ function LeadsTable({
           key={lead.id}
           lead={lead}
           canDelete={canDelete}
-          onSaved={onRefresh}
+          onUpdate={onUpdate}
+          onReconcile={onReconcile}
         />
       ))}
       {!registrations.length && (
@@ -1555,29 +2067,51 @@ function LeadsTable({
 function LeadRow({
   lead,
   canDelete,
-  onSaved,
+  onUpdate,
+  onReconcile,
 }: {
   lead: Registration;
   canDelete: boolean;
-  onSaved: () => void;
+  onUpdate: DashboardUpdater;
+  onReconcile: () => void;
 }) {
   const [status, setStatus] = useState<RegistrationStatus>(lead.status);
   const [note, setNote] = useState(lead.note);
   const [saving, setSaving] = useState(false);
 
   async function save() {
+    const previousStatus = lead.status;
+    const previousNote = lead.note;
+    onUpdate((current) => ({
+      ...current,
+      registrations: current.registrations.map((registration) =>
+        registration.id === lead.id
+          ? { ...registration, status, note, updated_at: new Date().toISOString() }
+          : registration,
+      ),
+    }));
     setSaving(true);
-    const response = await fetch(`/api/leads/${lead.id}`, {
+    const response = await dashboardMutation(`/api/leads/${lead.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status, note }),
     });
     setSaving(false);
     if (!response.ok) {
+      onUpdate((current) => ({
+        ...current,
+        registrations: current.registrations.map((registration) =>
+          registration.id === lead.id
+            ? { ...registration, status: previousStatus, note: previousNote }
+            : registration,
+        ),
+      }));
+      setStatus(previousStatus);
+      setNote(previousNote);
       window.alert(await readError(response));
       return;
     }
-    onSaved();
+    onReconcile();
   }
 
   async function remove() {
@@ -1586,16 +2120,56 @@ function LeadRow({
     );
     if (!confirmed) return;
 
+    onUpdate((current) => ({
+      ...current,
+      registrations: current.registrations.filter(
+        (registration) => registration.id !== lead.id,
+      ),
+      summary: {
+        ...current.summary,
+        registrationRowCount: Math.max(0, current.summary.registrationRowCount - 1),
+        registrationCount: Math.max(
+          0,
+          current.summary.registrationCount - (lead.status === "invalid" ? 0 : 1),
+        ),
+        convertedCount: Math.max(
+          0,
+          current.summary.convertedCount - (lead.status === "converted" ? 1 : 0),
+        ),
+      },
+      pagination: {
+        ...current.pagination,
+        totalRows: Math.max(0, current.pagination.totalRows - 1),
+      },
+    }));
     setSaving(true);
-    const response = await fetch(`/api/leads/${lead.id}`, {
+    const response = await dashboardMutation(`/api/leads/${lead.id}`, {
       method: "DELETE",
     });
     setSaving(false);
     if (!response.ok) {
+      onUpdate((current) => ({
+        ...current,
+        registrations: [lead, ...current.registrations].sort(
+          (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at),
+        ),
+        summary: {
+          ...current.summary,
+          registrationRowCount: current.summary.registrationRowCount + 1,
+          registrationCount:
+            current.summary.registrationCount + (lead.status === "invalid" ? 0 : 1),
+          convertedCount:
+            current.summary.convertedCount + (lead.status === "converted" ? 1 : 0),
+        },
+        pagination: {
+          ...current.pagination,
+          totalRows: current.pagination.totalRows + 1,
+        },
+      }));
       window.alert(await readError(response));
       return;
     }
-    onSaved();
+    onReconcile();
   }
 
   return (
@@ -1665,22 +2239,47 @@ function Modal({
   );
 }
 
-function TeamForm({ onDone }: { onDone: () => void }) {
+function TeamForm({
+  onPending,
+  onDone,
+  onFailed,
+}: {
+  onPending: (team: TeamPerformance) => void;
+  onDone: (pendingId: string, team: TeamPerformance) => void;
+  onFailed: (pendingId: string, message: string) => void;
+}) {
   const [name, setName] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    setLoading(true);
-    const response = await fetch("/api/teams", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    setLoading(false);
-    if (!response.ok) return setError(await readError(response));
-    onDone();
+    const pendingTeam: TeamPerformance = {
+      id: `pending-${crypto.randomUUID()}`,
+      name: name.trim(),
+      active: true,
+      sales_count: 0,
+      ambassador_count: 0,
+      registration_count: 0,
+    };
+    onPending(pendingTeam);
+    try {
+      const response = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) return onFailed(pendingTeam.id, await readError(response));
+      const payload = await response.json() as {
+        team: { id: string; name: string; active: boolean };
+      };
+      onDone(pendingTeam.id, {
+        ...payload.team,
+        sales_count: 0,
+        ambassador_count: 0,
+        registration_count: 0,
+      });
+    } catch {
+      onFailed(pendingTeam.id, "Unable to reach the server. The team was not created.");
+    }
   }
 
   return (
@@ -1690,8 +2289,7 @@ function TeamForm({ onDone }: { onDone: () => void }) {
       <p className="muted">Employees can be assigned after the team is created.</p>
       <form className="stack-form" onSubmit={submit}>
         <label>Team name<input className="plain-input" value={name} onChange={(event) => setName(event.target.value)} required /></label>
-        {error && <div className="alert error">{error}</div>}
-        <button className="primary-button wide" disabled={loading}>{loading ? "Creating..." : "Create team"}</button>
+        <button className="primary-button wide">Create team</button>
       </form>
     </>
   );
@@ -1699,28 +2297,50 @@ function TeamForm({ onDone }: { onDone: () => void }) {
 
 function EmployeeForm({
   teams,
+  onPending,
   onDone,
+  onFailed,
 }: {
   teams: DashboardData["teams"];
-  onDone: () => void;
+  onPending: (employee: Profile) => void;
+  onDone: (pendingId: string, employee: Profile) => void;
+  onFailed: (employee: Profile, message: string) => void;
 }) {
   const [form, setForm] = useState({
     fullName: "", email: "", phone: "", role: "sales", teamId: "", password: "",
   });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    setLoading(true);
-    const response = await fetch("/api/employees", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    setLoading(false);
-    if (!response.ok) return setError(await readError(response));
-    onDone();
+    const pendingEmployee: Profile = {
+      id: `pending-${crypto.randomUUID()}`,
+      full_name: form.fullName.trim(),
+      email: form.email.trim().toLowerCase(),
+      phone: form.phone.trim(),
+      role: form.role as AppRole,
+      team_id: form.teamId,
+      active: true,
+      created_at: new Date().toISOString(),
+    };
+    onPending(pendingEmployee);
+    try {
+      const response = await fetch("/api/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!response.ok) return onFailed(pendingEmployee, await readError(response));
+      const payload = await response.json() as { employee: Profile };
+      onDone(pendingEmployee.id, {
+        ...payload.employee,
+        created_at: payload.employee.created_at ?? new Date().toISOString(),
+      });
+    } catch {
+      onFailed(
+        pendingEmployee,
+        "Unable to reach the server. The employee account was not created.",
+      );
+    }
   }
 
   return (
@@ -1733,10 +2353,9 @@ function EmployeeForm({
         <label>Work email<input className="plain-input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
         <label>Phone (optional)<input className="plain-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
         <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="sales">Sales Executive</option><option value="team_lead">Team Lead</option></select></label>
-        <label>Team<select value={form.teamId} onChange={(e) => setForm({ ...form, teamId: e.target.value })} required><option value="">Select team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+        <label>Team<select value={form.teamId} onChange={(e) => setForm({ ...form, teamId: e.target.value })} required><option value="">Select team</option>{teams.filter((team) => !team.id.startsWith("pending-")).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
         <label>Login password<input className="plain-input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} minLength={12} required /></label>
-        {error && <div className="alert error full-span">{error}</div>}
-        <button className="primary-button wide full-span" disabled={loading}>{loading ? "Creating..." : "Create employee"}</button>
+        <button className="primary-button wide full-span">Create employee</button>
       </form>
     </>
   );
@@ -1747,7 +2366,7 @@ function EmployeeImport({
   onDone,
 }: {
   teams: DashboardData["teams"];
-  onDone: () => void;
+  onDone: (employees: Profile[]) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState("");
@@ -1785,7 +2404,11 @@ function EmployeeImport({
           ? ` ${payload.errors.map((item: { row: number; error: string }) => `Row ${item.row}: ${item.error}`).join(" ")}`
           : ""),
     );
-    if (payload.created?.length) onDone();
+    if (payload.created?.length) {
+      onDone(
+        payload.created.map((item: { employee: Profile }) => item.employee),
+      );
+    }
   }
 
   return (
@@ -1808,24 +2431,74 @@ function EmployeeImport({
   );
 }
 
-function AmbassadorForm({ onDone }: { onDone: () => void }) {
+function AmbassadorForm({
+  user,
+  target,
+  onPending,
+  onDone,
+  onFailed,
+}: {
+  user: Profile;
+  target: number;
+  onPending: (ambassador: AmbassadorPerformance) => void;
+  onDone: (pendingId: string, ambassador: AmbassadorPerformance) => void;
+  onFailed: (ambassador: AmbassadorPerformance, message: string) => void;
+}) {
   const [form, setForm] = useState({
     name: "", phone: "", college: "", city: "", courseYear: "",
   });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    setLoading(true);
-    const response = await fetch("/api/ambassadors", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    setLoading(false);
-    if (!response.ok) return setError(await readError(response));
-    onDone();
+    const now = new Date().toISOString();
+    const pendingAmbassador: AmbassadorPerformance = {
+      id: `pending-${crypto.randomUUID()}`,
+      sales_id: user.id,
+      team_id: user.team_id ?? "",
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      college: form.college.trim(),
+      city: form.city.trim(),
+      course_year: form.courseYear.trim(),
+      public_slug: "",
+      progress_key: "",
+      target,
+      status: "active",
+      created_at: now,
+      updated_at: now,
+      registration_count: 0,
+      qualified: false,
+      progress_updated_at: now,
+    };
+    onPending(pendingAmbassador);
+    try {
+      const response = await fetch("/api/ambassadors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!response.ok) return onFailed(pendingAmbassador, await readError(response));
+      const payload = await response.json() as {
+        ambassador: Omit<
+          AmbassadorPerformance,
+          "registration_count" | "qualified" | "progress_updated_at"
+        >;
+      };
+      onDone(pendingAmbassador.id, {
+        ...payload.ambassador,
+        sales_id: payload.ambassador.sales_id ?? user.id,
+        team_id: payload.ambassador.team_id ?? user.team_id ?? "",
+        target: payload.ambassador.target ?? target,
+        registration_count: 0,
+        qualified: false,
+        progress_updated_at: payload.ambassador.updated_at ?? now,
+      });
+    } catch {
+      onFailed(
+        pendingAmbassador,
+        "Unable to reach the server. The group was not created.",
+      );
+    }
   }
 
   return (
@@ -1839,8 +2512,7 @@ function AmbassadorForm({ onDone }: { onDone: () => void }) {
         <label className="full-span">College<input className="plain-input" value={form.college} onChange={(e) => setForm({ ...form, college: e.target.value })} required /></label>
         <label>City<input className="plain-input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></label>
         <label>Course and year<input className="plain-input" value={form.courseYear} onChange={(e) => setForm({ ...form, courseYear: e.target.value })} /></label>
-        {error && <div className="alert error full-span">{error}</div>}
-        <button className="primary-button wide full-span" disabled={loading}>{loading ? "Creating..." : "Create group and ambassador"}</button>
+        <button className="primary-button wide full-span">Create group and ambassador</button>
       </form>
     </>
   );
@@ -1848,24 +2520,32 @@ function AmbassadorForm({ onDone }: { onDone: () => void }) {
 
 function DefaultTargetForm({
   value,
-  onDone,
+  onChange,
+  onReconcile,
 }: {
   value: number;
-  onDone: () => void;
+  onChange: (target: number) => void;
+  onReconcile: () => void;
 }) {
   const [target, setTarget] = useState(value);
   const [saving, setSaving] = useState(false);
 
   async function save() {
+    const previousTarget = value;
+    onChange(target);
     setSaving(true);
-    const response = await fetch("/api/settings/target", {
+    const response = await dashboardMutation("/api/settings/target", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ target }),
     });
     setSaving(false);
-    if (!response.ok) return window.alert(await readError(response));
-    onDone();
+    if (!response.ok) {
+      onChange(previousTarget);
+      setTarget(previousTarget);
+      return window.alert(await readError(response));
+    }
+    onReconcile();
   }
 
   return (

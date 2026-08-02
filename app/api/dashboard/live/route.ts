@@ -9,6 +9,7 @@ import type {
   DashboardLiveUpdate,
   DashboardSummary,
   Registration,
+  Profile,
   SalesPerformance,
   TeamPerformance,
 } from "@/lib/types";
@@ -28,20 +29,6 @@ function safeSearch(value: string | null) {
     .slice(0, 100)
     .replace(/[^\p{L}\p{N}\s@+_-]/gu, "");
 }
-
-const emptySummary: DashboardSummary = {
-  registrationRowCount: 0,
-  registrationCount: 0,
-  todayRegistrationCount: 0,
-  convertedCount: 0,
-  groupsRepresentedCount: 0,
-  ambassadorCount: 0,
-  activeAmbassadorCount: 0,
-  qualifiedAmbassadorCount: 0,
-  groupCreatorCount: 0,
-  daily: [],
-  groupRankings: [],
-};
 
 export async function GET(request: Request) {
   const user = await requireApiProfile();
@@ -87,16 +74,20 @@ export async function GET(request: Request) {
   const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize")) || 50));
   const isRegistrationEvent = event.event_type.startsWith("registration_");
   const isAmbassadorEvent = event.event_type.startsWith("ambassador_");
+  const isEmployeeEvent = event.event_type.startsWith("employee_");
+  const isTeamEvent = event.event_type.startsWith("team_");
   const affectedAmbassadorId =
     event.ambassador_id ?? (isAmbassadorEvent ? event.entity_id : null);
 
-  const summaryPromise = admin.rpc("dashboard_summary", {
-    p_team_id: teamId,
-    p_sales_id: salesId,
-    p_ambassador_id: groupId,
-    p_start_at: startAt,
-    p_search: search || null,
-  });
+  const summaryPromise = isEmployeeEvent || isTeamEvent
+    ? Promise.resolve({ data: null, error: null })
+    : admin.rpc("dashboard_summary", {
+        p_team_id: teamId,
+        p_sales_id: salesId,
+        p_ambassador_id: groupId,
+        p_start_at: startAt,
+        p_search: search || null,
+      });
   const registrationPromise =
     isRegistrationEvent && event.event_type !== "registration_deleted" && event.entity_id
       ? admin
@@ -114,18 +105,28 @@ export async function GET(request: Request) {
         .eq("id", affectedAmbassadorId)
         .maybeSingle()
     : Promise.resolve({ data: null, error: null });
-  const teamPromise = event.team_id
-    ? admin.from("team_performance").select("*").eq("id", event.team_id).maybeSingle()
+  const affectedTeamId = event.team_id ?? (isTeamEvent ? event.entity_id : null);
+  const teamPromise = affectedTeamId && event.event_type !== "team_deleted"
+    ? admin.from("team_performance").select("*").eq("id", affectedTeamId).maybeSingle()
     : Promise.resolve({ data: null, error: null });
+  const profilePromise =
+    isEmployeeEvent && event.event_type !== "employee_deleted" && event.entity_id
+      ? admin
+          .from("profiles")
+          .select("id,full_name,email,phone,role,team_id,active,created_at")
+          .eq("id", event.entity_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null });
   const salesPromise = event.sales_id
     ? admin.from("member_performance").select("*").eq("id", event.sales_id).maybeSingle()
     : Promise.resolve({ data: null, error: null });
 
-  const [summaryResult, registration, ambassador, team, sales] =
+  const [summaryResult, registration, ambassador, profile, team, sales] =
     await Promise.all([
       summaryPromise,
       registrationPromise,
       ambassadorPromise,
+      profilePromise,
       teamPromise,
       salesPromise,
     ]);
@@ -133,27 +134,35 @@ export async function GET(request: Request) {
     summaryResult.error,
     registration.error,
     ambassador.error,
+    profile.error,
     team.error,
     sales.error,
   ].find(Boolean);
   if (firstError) return errorResponse("Unable to apply the realtime update.", 500);
 
-  const summary = (summaryResult.data ?? emptySummary) as DashboardSummary;
-  const totalPages = Math.max(1, Math.ceil(summary.registrationRowCount / pageSize));
-  const page = Math.min(requestedPage, totalPages);
+  const summary = summaryResult.data
+    ? (summaryResult.data as DashboardSummary)
+    : null;
+  const totalPages = summary
+    ? Math.max(1, Math.ceil(summary.registrationRowCount / pageSize))
+    : 1;
+  const page = summary ? Math.min(requestedPage, totalPages) : requestedPage;
   const payload: DashboardLiveUpdate = {
     event,
     registration: registration.data as Registration | null,
     ambassador: ambassador.data as AmbassadorPerformance | null,
+    profile: profile.data as Profile | null,
     teamPerformance: team.data as TeamPerformance | null,
     salesPerformance: sales.data as SalesPerformance | null,
     summary,
-    pagination: {
-      page,
-      pageSize,
-      totalRows: summary.registrationRowCount,
-      totalPages,
-    },
+    pagination: summary
+      ? {
+          page,
+          pageSize,
+          totalRows: summary.registrationRowCount,
+          totalPages,
+        }
+      : null,
   };
 
   return NextResponse.json(payload, {

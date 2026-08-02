@@ -4,7 +4,8 @@ import { useState } from "react";
 import { ArrowRight, LockKeyhole, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
-import type { AppRole } from "@/lib/types";
+import { setDashboardBootstrap } from "@/lib/dashboard-bootstrap";
+import type { AppRole, DashboardData } from "@/lib/types";
 
 function homeFor(role: AppRole) {
   if (role === "admin") return "/admin";
@@ -36,8 +37,12 @@ export function LoginPanel() {
       return;
     }
 
-    const response = await fetch("/api/me", { cache: "no-store" });
-    const result = await response.json();
+    const response = await fetch("/api/dashboard?page=1&pageSize=50", {
+      cache: "no-store",
+    });
+    const result = (await response.json().catch(() => ({}))) as Partial<DashboardData> & {
+      error?: string;
+    };
     if (!response.ok || !result.user) {
       await supabase.auth.signOut();
       setError(result.error ?? "This account is not active.");
@@ -45,8 +50,8 @@ export function LoginPanel() {
       return;
     }
 
+    setDashboardBootstrap(result as DashboardData);
     router.replace(homeFor(result.user.role));
-    router.refresh();
   }
 
   return (

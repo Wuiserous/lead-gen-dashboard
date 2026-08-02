@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
 import { reportingRangeStart } from "@/lib/reporting-date";
@@ -67,7 +67,9 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminSupabase();
-  await admin.rpc("anonymize_expired_registrations");
+  after(async () => {
+    await admin.rpc("anonymize_expired_registrations");
+  });
 
   let teamsQuery = admin.from("team_performance").select("*").order("name");
   let employeesQuery = admin
@@ -124,12 +126,14 @@ export async function GET(request: Request) {
     );
   }
 
-  const [teams, employees, sales, ambassadors, settings, summaryResult] =
+  const offset = (requestedPage - 1) * pageSize;
+  const [teams, employees, sales, ambassadors, registrations, settings, summaryResult] =
     await Promise.all([
       teamsQuery,
       employeesQuery,
       salesQuery,
       ambassadorsQuery,
+      registrationsQuery.range(offset, offset + pageSize - 1),
       admin
         .from("app_settings")
         .select("value")
@@ -149,6 +153,7 @@ export async function GET(request: Request) {
     employees.error,
     sales.error,
     ambassadors.error,
+    registrations.error,
     settings.error,
     summaryResult.error,
   ].find(Boolean);
@@ -157,13 +162,20 @@ export async function GET(request: Request) {
   const summary = (summaryResult.data ?? emptySummary) as DashboardSummary;
   const totalPages = Math.max(1, Math.ceil(summary.registrationRowCount / pageSize));
   const page = Math.min(requestedPage, totalPages);
-  const offset = (page - 1) * pageSize;
-  const registrations = await registrationsQuery.range(
-    offset,
-    offset + pageSize - 1,
-  );
-  if (registrations.error) {
-    return errorResponse("Unable to load registrations.", 500);
+  let registrationRows = registrations.data ?? [];
+
+  // The common path stays fully parallel. Only refetch when a deletion made
+  // the requested page disappear while the user was viewing it.
+  if (page !== requestedPage) {
+    const fallbackOffset = (page - 1) * pageSize;
+    const fallback = await registrationsQuery.range(
+      fallbackOffset,
+      fallbackOffset + pageSize - 1,
+    );
+    if (fallback.error) {
+      return errorResponse("Unable to load registrations.", 500);
+    }
+    registrationRows = fallback.data ?? [];
   }
 
   const payload: DashboardData = {
@@ -173,7 +185,7 @@ export async function GET(request: Request) {
     employees: (employees.data ?? []) as Profile[],
     salesPerformance: (sales.data ?? []) as SalesPerformance[],
     ambassadors: (ambassadors.data ?? []) as AmbassadorPerformance[],
-    registrations: (registrations.data ?? []) as unknown as Registration[],
+    registrations: registrationRows as unknown as Registration[],
     summary,
     pagination: {
       page,

@@ -128,8 +128,9 @@ export type DashboardLiveUpdate = {
   event: DashboardActivityEvent;
   registration: Registration | null;
   ambassador: AmbassadorPerformance | null;
+  profile: Profile | null;
   teamPerformance: TeamPerformance | null;
   salesPerformance: SalesPerformance | null;
-  summary: DashboardSummary;
-  pagination: DashboardPagination;
+  summary: DashboardSummary | null;
+  pagination: DashboardPagination | null;
 };

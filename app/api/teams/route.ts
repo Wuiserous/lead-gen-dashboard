@@ -29,18 +29,20 @@ export async function POST(request: Request) {
     );
   }
 
-  await admin.from("audit_events").insert({
-    actor_id: user.id,
-    action: "team_created",
-    entity_type: "team",
-    entity_id: data.id,
-    details: { name },
-  });
-  await admin.from("activity_events").insert({
-    event_type: "team_created",
-    actor_id: user.id,
-    team_id: data.id,
-    entity_id: data.id,
-  });
+  await Promise.all([
+    admin.from("audit_events").insert({
+      actor_id: user.id,
+      action: "team_created",
+      entity_type: "team",
+      entity_id: data.id,
+      details: { name },
+    }),
+    admin.from("activity_events").insert({
+      event_type: "team_created",
+      actor_id: user.id,
+      team_id: data.id,
+      entity_id: data.id,
+    }),
+  ]);
   return NextResponse.json({ team: data }, { status: 201 });
 }
