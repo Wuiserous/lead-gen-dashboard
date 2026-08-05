@@ -47,30 +47,59 @@ const industryCompanies = [
 const certificateTypes = [
   {
     name: "Training",
-    summary: "Expert-led learning completion",
-    heading: "Certificate of Training",
+    summary: "Training completion certificate",
+    heading: "Training Completion Certificate",
+    recipientLine: "This certificate is awarded to",
     description: "for successfully completing structured training and guided practical learning with Persevex.",
     theme: "training",
   },
   {
+    name: "Acceptance",
+    summary: "Internship acceptance letter",
+    heading: "Internship Acceptance Letter",
+    recipientLine: "This official letter is issued to",
+    description: "confirming selection and acceptance into the chosen Persevex internship program.",
+    theme: "acceptance",
+  },
+  {
     name: "Internship",
-    summary: "Project and evaluation proof",
-    heading: "Internship Certificate",
+    summary: "Internship completion certificate",
+    heading: "Internship Completion Certificate",
+    recipientLine: "This certificate is awarded to",
     description: "for completing the assigned internship work, practical project and final evaluation with Persevex.",
     theme: "internship",
   },
   {
-    name: "Excellence",
-    summary: "Recognition for top performance",
-    heading: "Certificate of Excellence",
-    description: "in recognition of exceptional commitment, project quality and performance throughout the program.",
-    theme: "excellence",
+    name: "Campus",
+    summary: "Campus representative certificate",
+    heading: "Campus Representative Certificate",
+    recipientLine: "This certificate is awarded to",
+    description: "in recognition of contribution and performance as an official Persevex campus representative.",
+    theme: "campus",
   },
+] as const;
+
+const complianceCredentials = [
+  { id: "iso", title: "ISO Certification", detail: "Quality management system" },
+  { id: "msme", title: "MSME Certificate", detail: "Registered enterprise" },
+  { id: "gst", title: "GST Registration", detail: "Government tax registration" },
+  { id: "startup", title: "Startup India Recognition", detail: "DPIIT recognised startup" },
 ] as const;
 
 function CertificatePreview() {
   const [selectedCertificate, setSelectedCertificate] = useState(0);
   const certificate = certificateTypes[selectedCertificate];
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) return;
+
+    const interval = window.setInterval(() => {
+      setSelectedCertificate((current) => (current + 1) % certificateTypes.length);
+    }, 4200);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   function moveCertificate(direction: number) {
     setSelectedCertificate((current) =>
@@ -100,7 +129,8 @@ function CertificatePreview() {
         </div>
       </div>
 
-      <div className="certificate-stage">
+      <div className="certificate-stage" aria-live="polite">
+        <div className="certificate-carousel-slide" key={certificate.name}>
         <div className="certificate-paper">
           <span className="certificate-corner certificate-corner-top" aria-hidden="true" />
           <span className="certificate-corner certificate-corner-bottom" aria-hidden="true" />
@@ -116,13 +146,14 @@ function CertificatePreview() {
           <Award className="certificate-watermark" size={88} aria-hidden="true" />
           <p className="certificate-overline">Persevex presents</p>
           <h2>{certificate.heading}</h2>
-          <p className="certificate-awarded">This certificate is awarded to</p>
+          <p className="certificate-awarded">{certificate.recipientLine}</p>
           <strong className="certificate-student-name">Student Name</strong>
           <p className="certificate-description">{certificate.description}</p>
           <div className="certificate-paper-footer">
             <span><Award size={20} /><b>Persevex</b><small>Verified credential</small></span>
             <span><b>Authorised signatory</b><small>Persevex Education</small></span>
           </div>
+        </div>
         </div>
       </div>
 
@@ -140,8 +171,53 @@ function CertificatePreview() {
           </button>
         ))}
       </div>
-      <p className="certificate-preview-note">Preview format · Issued after successful completion</p>
+      <p className="certificate-preview-note">Automatically previewing official Persevex documents</p>
     </aside>
+  );
+}
+
+function ComplianceLogo({ id }: { id: (typeof complianceCredentials)[number]["id"] }) {
+  if (id === "iso") {
+    return <span className="compliance-logo compliance-logo-iso"><b>ISO</b><small>9001:2015</small></span>;
+  }
+
+  if (id === "msme") {
+    return (
+      <span className="compliance-logo compliance-logo-msme">
+        <i aria-hidden="true"><b /><b /><b /></i><strong>MSME</strong>
+      </span>
+    );
+  }
+
+  if (id === "gst") {
+    return <span className="compliance-logo compliance-logo-gst"><i>INDIA</i><b>GST</b></span>;
+  }
+
+  return <span className="compliance-logo compliance-logo-startup"><b>#startup</b><strong>india</strong></span>;
+}
+
+function ComplianceCarousel() {
+  return (
+    <section className="compliance-section" aria-labelledby="compliance-title">
+      <div className="compliance-heading">
+        <span className="eyebrow">CERTIFICATIONS &amp; COMPLIANCE</span>
+        <h2 id="compliance-title">Registered. Recognised. Responsible.</h2>
+      </div>
+      <div className="compliance-marquee" aria-label="Persevex certifications and registrations">
+        <div className="compliance-track">
+          {[0, 1].map((copyIndex) => (
+            <div className="compliance-set" key={copyIndex} aria-hidden={copyIndex === 1}>
+              {complianceCredentials.map((credential) => (
+                <article className={`compliance-card compliance-card-${credential.id}`} key={credential.id}>
+                  <ComplianceLogo id={credential.id} />
+                  <span><strong>{credential.title}</strong><small>{credential.detail}</small></span>
+                </article>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -485,6 +561,8 @@ export function StudentOpportunity({
           </div>
         </div>
       )}
+
+      <ComplianceCarousel />
 
       <footer className="student-footer student-footer-v2">
         <Image

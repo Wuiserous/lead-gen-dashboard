@@ -2339,74 +2339,80 @@ function AmbassadorsView({
             aria-modal="true"
             aria-labelledby="share-draft-title"
           >
-            <button
-              type="button"
-              className="modal-close"
-              aria-label="Close WhatsApp draft"
-              onClick={() => setShareTarget(null)}
-            >
-              <X size={19} />
-            </button>
-            <div className="share-draft-heading">
-              <span className="eyebrow">WHATSAPP CAMPAIGN</span>
-              <h2 id="share-draft-title">Choose the poster students will see</h2>
-              <p>The referral link is attached automatically and carries the selected poster as its WhatsApp preview.</p>
-            </div>
-
-            <div className="share-creative-grid">
-              {shareCreatives.map((creative) => (
-                <button
-                  type="button"
-                  key={creative.id}
-                  className={selectedCreativeId === creative.id ? "selected" : ""}
-                  aria-pressed={selectedCreativeId === creative.id}
-                  onClick={() => {
-                    setSelectedCreativeId(creative.id);
-                    setShareNotice("");
-                  }}
-                >
-                  <Image src={creative.src} alt={creative.name} width={220} height={300} />
-                  <span>{selectedCreativeId === creative.id ? <Check size={14} /> : <ImageIcon size={14} />}{creative.name}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="share-draft-preview">
-              <span>Message preview</span>
-              <pre>{buildWhatsAppDraft(shareLinkFor(shareTarget))}</pre>
-            </div>
-
-            <div className="share-draft-primary-actions">
-              <button type="button" className="primary-button" onClick={() => void sharePosterAndDraft()}>
-                <Share2 size={17} /> Share poster + text
-              </button>
-              <button type="button" className="whatsapp-button" onClick={openWhatsAppDraft}>
-                <MessageCircle size={17} /> Open WhatsApp
-              </button>
-            </div>
-            <div className="share-draft-secondary-actions">
+            <div className="share-draft-modal-header">
+              <div className="share-draft-heading">
+                <span className="eyebrow">WHATSAPP CAMPAIGN</span>
+                <h2 id="share-draft-title">Choose a poster and share</h2>
+                <p>Your referral link is added automatically.</p>
+              </div>
               <button
                 type="button"
-                className={copyFeedback === "share:draft" ? "copied" : ""}
-                onClick={() => void copy(
-                  buildWhatsAppDraft(shareLinkFor(shareTarget)),
-                  "share:draft",
-                )}
+                className="modal-close"
+                aria-label="Close WhatsApp draft"
+                onClick={() => setShareTarget(null)}
               >
-                {copyFeedback === "share:draft" ? <Check size={16} /> : <Copy size={16} />}
-                {copyFeedback === "share:draft" ? "Draft copied!" : "Copy draft"}
-              </button>
-              <button type="button" onClick={() => void copySelectedPoster()}>
-                <Copy size={16} /> Copy poster
-              </button>
-              <button type="button" onClick={downloadSelectedPoster}>
-                <Download size={16} /> Download poster
+                <X size={19} />
               </button>
             </div>
-            <p className="share-draft-compatibility">
-              On supported phones, “Share poster + text” sends both through the native share sheet. WhatsApp Web may require attaching the poster and pasting the copied draft separately.
-            </p>
-            {shareNotice && <p className="share-draft-notice" aria-live="polite">{shareNotice}</p>}
+
+            <div className="share-draft-scroll">
+              <div className="share-creative-grid">
+                {shareCreatives.map((creative) => (
+                  <button
+                    type="button"
+                    key={creative.id}
+                    className={selectedCreativeId === creative.id ? "selected" : ""}
+                    aria-pressed={selectedCreativeId === creative.id}
+                    onClick={() => {
+                      setSelectedCreativeId(creative.id);
+                      setShareNotice("");
+                    }}
+                  >
+                    <Image src={creative.src} alt={creative.name} width={220} height={300} />
+                    <span>{selectedCreativeId === creative.id ? <Check size={14} /> : <ImageIcon size={14} />}{creative.name}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="share-draft-preview">
+                <span>Message preview</span>
+                <pre>{buildWhatsAppDraft(shareLinkFor(shareTarget))}</pre>
+              </div>
+            </div>
+
+            <div className="share-draft-modal-footer">
+              <div className="share-draft-primary-actions">
+                <button type="button" className="primary-button" onClick={() => void sharePosterAndDraft()}>
+                  <Share2 size={17} /> Share poster + text
+                </button>
+                <button type="button" className="whatsapp-button" onClick={openWhatsAppDraft}>
+                  <MessageCircle size={17} /> Open WhatsApp
+                </button>
+              </div>
+              <div className="share-draft-secondary-actions">
+                <button
+                  type="button"
+                  className={copyFeedback === "share:draft" ? "copied" : ""}
+                  onClick={() => void copy(
+                    buildWhatsAppDraft(shareLinkFor(shareTarget)),
+                    "share:draft",
+                  )}
+                >
+                  {copyFeedback === "share:draft" ? <Check size={16} /> : <Copy size={16} />}
+                  {copyFeedback === "share:draft" ? "Draft copied!" : "Copy draft"}
+                </button>
+                <button type="button" onClick={() => void copySelectedPoster()}>
+                  <Copy size={16} /> Copy poster
+                </button>
+                <button type="button" onClick={downloadSelectedPoster}>
+                  <Download size={16} /> Download poster
+                </button>
+              </div>
+              <p className="share-draft-compatibility">
+                Native sharing sends the poster and text together when supported. WhatsApp Web may require pasting the copied draft separately.
+              </p>
+              {shareNotice && <p className="share-draft-notice" aria-live="polite">{shareNotice}</p>}
+            </div>
           </section>
         </div>
       )}
