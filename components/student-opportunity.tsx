@@ -4,11 +4,14 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
+  Award,
   BadgeIndianRupee,
   BriefcaseBusiness,
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   GraduationCap,
   Presentation,
   Rocket,
@@ -40,6 +43,107 @@ const industryCompanies = [
   { name: "Netflix", logo: "/industry/netflix.svg" },
   { name: "IBM", logo: "/industry/ibm.svg" },
 ];
+
+const certificateTypes = [
+  {
+    name: "Training",
+    summary: "Expert-led learning completion",
+    heading: "Certificate of Training",
+    description: "for successfully completing structured training and guided practical learning with Persevex.",
+    theme: "training",
+  },
+  {
+    name: "Internship",
+    summary: "Project and evaluation proof",
+    heading: "Internship Certificate",
+    description: "for completing the assigned internship work, practical project and final evaluation with Persevex.",
+    theme: "internship",
+  },
+  {
+    name: "Excellence",
+    summary: "Recognition for top performance",
+    heading: "Certificate of Excellence",
+    description: "in recognition of exceptional commitment, project quality and performance throughout the program.",
+    theme: "excellence",
+  },
+] as const;
+
+function CertificatePreview() {
+  const [selectedCertificate, setSelectedCertificate] = useState(0);
+  const certificate = certificateTypes[selectedCertificate];
+
+  function moveCertificate(direction: number) {
+    setSelectedCertificate((current) =>
+      (current + direction + certificateTypes.length) % certificateTypes.length,
+    );
+  }
+
+  return (
+    <aside
+      className="certificate-showcase"
+      data-certificate-theme={certificate.theme}
+      aria-label="Persevex certificate preview"
+    >
+      <div className="certificate-showcase-header">
+        <div>
+          <span>Certificate preview</span>
+          <strong>{certificate.name}</strong>
+          <small>{certificate.summary}</small>
+        </div>
+        <div className="certificate-showcase-controls">
+          <button type="button" onClick={() => moveCertificate(-1)} aria-label="Previous certificate">
+            <ChevronLeft size={18} />
+          </button>
+          <button type="button" onClick={() => moveCertificate(1)} aria-label="Next certificate">
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="certificate-stage">
+        <div className="certificate-paper">
+          <span className="certificate-corner certificate-corner-top" aria-hidden="true" />
+          <span className="certificate-corner certificate-corner-bottom" aria-hidden="true" />
+          <div className="certificate-paper-header">
+            <Image
+              src="/persevex-logo.png"
+              alt="Persevex"
+              width={865}
+              height={375}
+            />
+            <span>Career experience program</span>
+          </div>
+          <Award className="certificate-watermark" size={88} aria-hidden="true" />
+          <p className="certificate-overline">Persevex presents</p>
+          <h2>{certificate.heading}</h2>
+          <p className="certificate-awarded">This certificate is awarded to</p>
+          <strong className="certificate-student-name">Student Name</strong>
+          <p className="certificate-description">{certificate.description}</p>
+          <div className="certificate-paper-footer">
+            <span><Award size={20} /><b>Persevex</b><small>Verified credential</small></span>
+            <span><b>Authorised signatory</b><small>Persevex Education</small></span>
+          </div>
+        </div>
+      </div>
+
+      <div className="certificate-type-tabs" aria-label="Certificate types">
+        {certificateTypes.map((item, index) => (
+          <button
+            type="button"
+            key={item.name}
+            className={index === selectedCertificate ? "active" : ""}
+            onClick={() => setSelectedCertificate(index)}
+            aria-pressed={index === selectedCertificate}
+          >
+            <strong>{item.name}</strong>
+            <small>{item.summary}</small>
+          </button>
+        ))}
+      </div>
+      <p className="certificate-preview-note">Preview format · Issued after successful completion</p>
+    </aside>
+  );
+}
 
 export function StudentOpportunity({
   slug,
@@ -238,7 +342,7 @@ export function StudentOpportunity({
             <CheckCircle2 size={18} />
           </div>
         </div>
-
+        <CertificatePreview />
       </section>
 
       <section className="recognition-section" aria-label="Persevex recognition and training ecosystem">
@@ -311,7 +415,11 @@ export function StudentOpportunity({
                 onClick={() => chooseDomain(item.name)}
                 disabled={registered}
               >
-                <span className={`domain-card-visual ${item.visual}`} aria-hidden="true" />
+                <span
+                  className="domain-card-visual"
+                  style={{ backgroundImage: `url(${item.image})` }}
+                  aria-hidden="true"
+                />
                 <span className="domain-card-copy">
                   <strong>{item.name}</strong>
                   <small>{item.description}</small>
