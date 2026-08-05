@@ -5111,3 +5111,138 @@ p {
   }
 
 }
+
+/* CA progress: keep performance and registration details above the fold. */
+
+@media (min-width: 901px) {
+  .progress-header {
+    height: 64px;
+    padding-right: max(22px, calc((100vw - 1180px) / 2));
+    padding-left: max(22px, calc((100vw - 1180px) / 2));
+  }
+
+  .progress-header img {
+    width: 130px;
+    height: 50px;
+    object-fit: contain;
+  }
+
+  .progress-welcome {
+    min-height: 222px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 34px max(22px, calc((100vw - 1180px) / 2)) 70px;
+  }
+
+  .progress-welcome h1 {
+    margin: 8px 0 5px;
+    font-size: clamp(2.65rem, 4.2vw, 4rem);
+  }
+
+  .progress-welcome p {
+    font-size: 0.88rem;
+  }
+
+  .progress-content {
+    width: min(1180px, calc(100% - 44px));
+    display: grid;
+    grid-template-columns: minmax(350px, 0.82fr) minmax(0, 1.38fr);
+    align-items: stretch;
+    gap: 16px;
+    margin-top: -42px;
+  }
+
+  .progress-main-card,
+  .progress-leads-card {
+    min-height: 435px;
+  }
+
+  .progress-main-card {
+    display: flex;
+    flex-direction: column;
+    padding: 27px;
+  }
+
+  .progress-card-head {
+    align-items: flex-start;
+  }
+
+  .progress-card-head h2 {
+    font-size: clamp(1.8rem, 2.8vw, 2.45rem);
+  }
+
+  .big-progress-track {
+    margin-top: 27px;
+  }
+
+  .qualification-message {
+    margin-top: auto;
+  }
+
+  .progress-leads-card {
+    max-height: 505px;
+    display: flex;
+    flex-direction: column;
+    margin-top: 0;
+    padding: 24px;
+  }
+
+  .progress-leads-header h2 {
+    font-size: clamp(1.25rem, 2vw, 1.72rem);
+  }
+
+  .progress-lead-list {
+    min-height: 0;
+    margin-top: 16px;
+    overflow-y: auto;
+    padding-right: 5px;
+    scrollbar-color: #c8d2e0 transparent;
+    scrollbar-width: thin;
+  }
+
+  .progress-lead-row {
+    min-height: 62px;
+    padding: 8px 0;
+  }
+
+  .progress-lead-avatar {
+    width: 35px;
+    height: 35px;
+  }
+
+  .progress-load-more {
+    flex: 0 0 auto;
+    margin-top: 8px;
+  }
+
+  .progress-updated {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 1px 0 18px;
+  }
+}
+
+@media (max-width: 900px) {
+  .progress-welcome {
+    padding-top: 38px;
+    padding-bottom: 72px;
+  }
+
+  .progress-welcome h1 {
+    margin-top: 8px;
+    font-size: clamp(2.45rem, 10vw, 3.5rem);
+  }
+
+  .progress-content {
+    margin-top: -38px;
+  }
+
+  .progress-main-card {
+    padding: 24px;
+  }
+
+  .progress-leads-card {
+    margin-top: 13px;
+  }
+}
