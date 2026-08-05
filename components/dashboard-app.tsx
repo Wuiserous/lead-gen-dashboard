@@ -105,8 +105,7 @@ function registrationMatchesView(
       !needle ||
       lead.name.toLowerCase().includes(needle) ||
       lead.phone.includes(needle) ||
-      lead.preferred_domain.toLowerCase().includes(needle) ||
-      ambassadorLabel(lead).toLowerCase().includes(needle)
+      lead.preferred_domain.toLowerCase().includes(needle)
     )
   );
 }
@@ -169,6 +168,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const processedLiveEvents = useRef(new Set<number>());
   const latestSummaryEvent = useRef(0);
   const reconcileTimer = useRef<number | undefined>(undefined);
+  const loadRef = useRef<
+    ((quiet?: boolean, silent?: boolean) => Promise<void>) | null
+  >(null);
   const reportingViewKey = [
     teamFilter,
     memberFilter,
@@ -178,6 +180,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     page,
   ].join("|");
   const reportingViewKeyRef = useRef(reportingViewKey);
+  const skipBootstrapLoad = useRef(Boolean(initialData));
 
   const updateDashboard = useCallback(
     (updater: (current: DashboardData) => DashboardData) => {
@@ -197,6 +200,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
 
   const load = useCallback(async (quiet = false, silent = false) => {
     if (silent && visibleLoadInFlight.current) return;
+    const viewKeyAtStart = reportingViewKey;
     const requestId = ++loadSequence.current;
     const revisionAtStart = dataRevision.current;
     if (!silent) {
@@ -241,7 +245,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     const result = (await response.json()) as DashboardData;
     if (
       requestId !== loadSequence.current ||
-      revisionAtStart !== dataRevision.current
+      reportingViewKeyRef.current !== viewKeyAtStart
     ) {
       if (!silent) {
         visibleLoadInFlight.current = false;
@@ -260,7 +264,28 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       );
       return;
     }
-    setData(result);
+    setData((current) => {
+      if (!current || revisionAtStart === dataRevision.current) return result;
+
+      // A filter response must still be applied even if an optimistic create
+      // happened while it was loading. Preserve only unsaved local rows; the
+      // database remains authoritative for every committed record.
+      const pendingTeams = current.teams.filter((item) =>
+        item.id.startsWith("pending-"),
+      );
+      const pendingEmployees = current.employees.filter((item) =>
+        item.id.startsWith("pending-"),
+      );
+      const pendingAmbassadors = current.ambassadors.filter((item) =>
+        item.id.startsWith("pending-"),
+      );
+      return {
+        ...result,
+        teams: [...pendingTeams, ...result.teams],
+        employees: [...pendingEmployees, ...result.employees],
+        ambassadors: [...pendingAmbassadors, ...result.ambassadors],
+      };
+    });
     setPage(result.pagination.page);
     loadedOnce.current = true;
     setError("");
@@ -269,11 +294,15 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dateRange, debouncedSearch, expectedRole, groupFilter, memberFilter, page, router, teamFilter]);
+  }, [dateRange, debouncedSearch, expectedRole, groupFilter, memberFilter, page, reportingViewKey, router, teamFilter]);
 
   const scheduleReconciliation = useCallback(() => {
     if (reconcileTimer.current) window.clearTimeout(reconcileTimer.current);
     reconcileTimer.current = window.setTimeout(() => void load(true, true), 4_000);
+  }, [load]);
+
+  useEffect(() => {
+    loadRef.current = load;
   }, [load]);
 
   const loadLiveEvent = useCallback(async (event: DashboardActivityEvent) => {
@@ -453,38 +482,129 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   }, [search]);
 
   useEffect(() => {
-    if (loadedOnce.current) return;
-    const initialLoad = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(initialLoad);
-  }, [load]);
+    if (!data) return;
+    let reset: "team" | "member" | "group" | null = null;
+    if (
+      teamFilter !== "all" &&
+      !data.teams.some((team) => team.id === teamFilter)
+    ) {
+      reset = "team";
+    } else if (
+      memberFilter !== "all" &&
+      !data.employees.some((employee) => employee.id === memberFilter)
+    ) {
+      reset = "member";
+    } else if (
+      groupFilter !== "all" &&
+      !data.ambassadors.some(
+        (ambassador) =>
+          ambassador.id === groupFilter &&
+          inDateRange(ambassador.created_at, dateRange),
+      )
+    ) {
+      reset = "group";
+    }
+    if (!reset) return;
+    const resetFilters = window.setTimeout(() => {
+      if (reset === "team") setTeamFilter("all");
+      if (reset === "team" || reset === "member") setMemberFilter("all");
+      setGroupFilter("all");
+      setPage(1);
+    }, 0);
+    return () => window.clearTimeout(resetFilters);
+  }, [data, dateRange, groupFilter, memberFilter, teamFilter]);
+
+  useEffect(() => {
+    if (skipBootstrapLoad.current) {
+      skipBootstrapLoad.current = false;
+      return;
+    }
+    const filterLoad = window.setTimeout(
+      () => void load(loadedOnce.current),
+      0,
+    );
+    return () => window.clearTimeout(filterLoad);
+  }, [load, reportingViewKey]);
 
   useEffect(() => {
     const userId = data?.user.id;
     if (!userId) return;
     const supabase = createBrowserSupabase();
     let cancelled = false;
-    let channel: ReturnType<typeof supabase.channel> | undefined;
+    let broadcastChannel: ReturnType<typeof supabase.channel> | undefined;
+    let databaseChannel: ReturnType<typeof supabase.channel> | undefined;
+    let wasConnected = false;
+    const sources = { broadcast: false, database: false };
+
+    const receiveEvent = (value: unknown) => {
+      if (!value || typeof value !== "object") return;
+      const candidate = value as DashboardActivityEvent & { id: unknown };
+      const id = Number(candidate.id);
+      if (!Number.isSafeInteger(id) || typeof candidate.event_type !== "string") {
+        return;
+      }
+      void loadLiveEventRef.current({ ...candidate, id });
+    };
+
+    const updateConnection = (
+      source: keyof typeof sources,
+      status: string,
+    ) => {
+      if (cancelled) return;
+      const connectedBefore = sources.broadcast || sources.database;
+      sources[source] = status === "SUBSCRIBED";
+      const connectedNow = sources.broadcast || sources.database;
+      setLive(connectedNow);
+      if (connectedNow && !connectedBefore) {
+        if (wasConnected) void loadRef.current?.(true, true);
+        wasConnected = true;
+      }
+    };
+
     void (async () => {
       try {
         await supabase.realtime.setAuth();
         if (cancelled) return;
-        channel = supabase
+        broadcastChannel = supabase
           .channel(`dashboard:user:${userId}`, { config: { private: true } })
           .on(
             "broadcast",
             { event: "dashboard_changed" },
             (message: { payload?: DashboardActivityEvent }) => {
-              if (message.payload) void loadLiveEventRef.current(message.payload);
+              receiveEvent(message.payload);
             },
           )
-          .subscribe((status: string) => setLive(status === "SUBSCRIBED"));
+          .subscribe((status: string) =>
+            updateConnection("broadcast", status),
+          );
+
+        // Postgres Changes is a second delivery path backed by the existing
+        // activity_events RLS policy. It keeps dashboards live even if a
+        // private Broadcast authorization or trigger is temporarily delayed.
+        databaseChannel = supabase
+          .channel(`dashboard:activity:${userId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "activity_events",
+            },
+            (message: { new?: DashboardActivityEvent }) => {
+              receiveEvent(message.new);
+            },
+          )
+          .subscribe((status: string) =>
+            updateConnection("database", status),
+          );
       } catch {
         if (!cancelled) setLive(false);
       }
     })();
     return () => {
       cancelled = true;
-      if (channel) void supabase.removeChannel(channel);
+      if (broadcastChannel) void supabase.removeChannel(broadcastChannel);
+      if (databaseChannel) void supabase.removeChannel(databaseChannel);
     };
   }, [data?.user.id]);
 
@@ -492,11 +612,15 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     const reconcile = () => {
       if (document.visibilityState === "visible") void load(true, true);
     };
-    const interval = window.setInterval(reconcile, 60_000);
+    const interval = window.setInterval(reconcile, 45_000);
     document.addEventListener("visibilitychange", reconcile);
+    window.addEventListener("focus", reconcile);
+    window.addEventListener("online", reconcile);
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", reconcile);
+      window.removeEventListener("focus", reconcile);
+      window.removeEventListener("online", reconcile);
       if (reconcileTimer.current) window.clearTimeout(reconcileTimer.current);
     };
   }, [load]);
@@ -505,6 +629,15 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     await createBrowserSupabase().auth.signOut();
     router.replace("/");
     router.refresh();
+  }
+
+  function changeTab(nextTab: Tab) {
+    if (nextTab !== "leads" && (search || debouncedSearch)) {
+      setSearch("");
+      setDebouncedSearch("");
+      setPage(1);
+    }
+    setTab(nextTab);
   }
 
   if (loading || !data) {
@@ -555,8 +688,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
         !needle ||
         lead.name.toLowerCase().includes(needle) ||
         lead.phone.includes(needle) ||
-        lead.preferred_domain.toLowerCase().includes(needle) ||
-        ambassadorLabel(lead).toLowerCase().includes(needle)
+        lead.preferred_domain.toLowerCase().includes(needle)
       )
     );
   });
@@ -583,7 +715,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               key={item.id}
               className={tab === item.id ? "active" : ""}
               onClick={() => {
-                setTab(item.id);
+                changeTab(item.id);
                 setSidebar(false);
               }}
             >
@@ -606,6 +738,13 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
           </button>
         </div>
       </aside>
+
+      <button
+        type="button"
+        className={`sidebar-backdrop ${sidebar ? "open" : ""}`}
+        aria-label="Close navigation"
+        onClick={() => setSidebar(false)}
+      />
 
       <main className="dashboard-main">
         <header className="dashboard-header">
@@ -662,6 +801,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               filters={
                 <ReportingFilters
                   data={data}
+                  loading={refreshing}
                   teamFilter={teamFilter}
                   groupFilter={groupFilter}
                   memberFilter={memberFilter}
@@ -683,6 +823,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                   }}
                   onDateRangeChange={(value) => {
                     setDateRange(value);
+                    setGroupFilter("all");
                     setPage(1);
                   }}
                 />
@@ -700,7 +841,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 setGroupFilter("all");
                 setDateRange("all");
                 setPage(1);
-                setTab("overview");
+                changeTab("overview");
               }}
               onUpdate={updateDashboard}
               onReconcile={scheduleReconciliation}
@@ -715,7 +856,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 setMemberFilter(id);
                 setGroupFilter("all");
                 setPage(1);
-                setTab("ambassadors");
+                changeTab("ambassadors");
               }}
               onUpdate={updateDashboard}
               onReconcile={scheduleReconciliation}
@@ -728,6 +869,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               filters={
                 <ReportingFilters
                   data={data}
+                  loading={refreshing}
                   teamFilter={teamFilter}
                   groupFilter={groupFilter}
                   memberFilter={memberFilter}
@@ -749,6 +891,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                   }}
                   onDateRangeChange={(value) => {
                     setDateRange(value);
+                    setGroupFilter("all");
                     setPage(1);
                   }}
                 />
@@ -756,7 +899,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               onViewGroup={(id) => {
                 setGroupFilter(id);
                 setPage(1);
-                setTab("leads");
+                changeTab("leads");
               }}
               onUpdate={updateDashboard}
               onReconcile={scheduleReconciliation}
@@ -780,6 +923,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               </div>
               <ReportingFilters
                 data={data}
+                loading={refreshing}
                 teamFilter={teamFilter}
                 groupFilter={groupFilter}
                 memberFilter={memberFilter}
@@ -801,6 +945,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 }}
                 onDateRangeChange={(value) => {
                   setDateRange(value);
+                  setGroupFilter("all");
                   setPage(1);
                 }}
               />
@@ -1190,6 +1335,7 @@ function Overview({
 
 function ReportingFilters({
   data,
+  loading,
   teamFilter,
   groupFilter,
   memberFilter,
@@ -1200,6 +1346,7 @@ function ReportingFilters({
   onDateRangeChange,
 }: {
   data: DashboardData;
+  loading: boolean;
   teamFilter: string;
   groupFilter: string;
   memberFilter: string;
@@ -1218,14 +1365,15 @@ function ReportingFilters({
   const groups = data.ambassadors.filter(
     (ambassador) =>
       (teamFilter === "all" || ambassador.team_id === teamFilter) &&
-      (memberFilter === "all" || ambassador.sales_id === memberFilter),
+      (memberFilter === "all" || ambassador.sales_id === memberFilter) &&
+      inDateRange(ambassador.created_at, dateRange),
   );
 
   return (
-    <div className="reporting-filters">
+    <div className="reporting-filters" aria-busy={loading}>
       <div className="filter-heading">
-        <BarChart3 size={17} />
-        <span><strong>Reporting view</strong><small>Filter every number below</small></span>
+        {loading ? <RefreshCw className="spin" size={17} /> : <BarChart3 size={17} />}
+        <span><strong>Reporting view</strong><small>{loading ? "Updating this view..." : "Filter every number below"}</small></span>
       </div>
       {data.user.role === "admin" && (
         <label>
@@ -1241,7 +1389,7 @@ function ReportingFilters({
           </select>
         </label>
       )}
-      {creators.length > 1 && (
+      {data.user.role !== "sales" && creators.length > 0 && (
         <label>
           Team member
           <select value={memberFilter} onChange={(event) => onMemberChange(event.target.value)}>

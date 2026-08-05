@@ -1109,22 +1109,25 @@ p {
 
 .dashboard-shell {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: 255px minmax(0, 1fr);
   background: var(--surface);
 }
 
 .dashboard-sidebar {
-  min-height: 100vh;
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  width: 255px;
+  position: fixed;
+  inset: 0 auto 0 0;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   padding: 22px 16px 18px;
+  overflow-y: auto;
   background: var(--navy);
   color: var(--white);
   z-index: 30;
+}
+
+.sidebar-backdrop {
+  display: none;
 }
 
 .sidebar-brand {
@@ -1284,6 +1287,8 @@ p {
 
 .dashboard-main {
   min-width: 0;
+  min-height: 100vh;
+  margin-left: 255px;
 }
 
 .dashboard-header {
@@ -2477,12 +2482,11 @@ p {
   }
 
   .dashboard-shell {
-    grid-template-columns: 1fr;
+    display: block;
   }
 
   .dashboard-sidebar {
     width: min(300px, 88vw);
-    position: fixed;
     left: 0;
     transform: translateX(-103%);
     transition: transform 200ms ease;
@@ -2491,6 +2495,30 @@ p {
   .dashboard-sidebar.open {
     transform: translateX(0);
     box-shadow: 24px 0 70px rgba(3, 13, 31, 0.3);
+  }
+
+  .sidebar-backdrop {
+    width: auto;
+    min-height: 0;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    display: block;
+    border: 0;
+    padding: 0;
+    background: rgba(3, 13, 31, 0.42);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  .sidebar-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .dashboard-main {
+    margin-left: 0;
   }
 
   .mobile-only {

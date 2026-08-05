@@ -105,10 +105,6 @@ export async function GET(request: Request) {
     employeesQuery = employeesQuery.eq("id", user.id);
     salesQuery = salesQuery.eq("id", user.id);
     ambassadorsQuery = ambassadorsQuery.eq("sales_id", user.id);
-  } else if (teamId) {
-    employeesQuery = employeesQuery.eq("team_id", teamId);
-    salesQuery = salesQuery.eq("team_id", teamId);
-    ambassadorsQuery = ambassadorsQuery.eq("team_id", teamId);
   }
 
   if (teamId) registrationsQuery = registrationsQuery.eq("credited_team_id", teamId);
