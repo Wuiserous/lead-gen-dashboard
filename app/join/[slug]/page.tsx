@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { StudentOpportunity } from "@/components/student-opportunity";
+import { findShareCreative } from "@/lib/share-creatives";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-type PageProps = { params: Promise<{ slug: string }> };
+type PageProps = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ creative?: string }>;
+};
 
 async function getAmbassador(slug: string) {
   const { data } = await createAdminSupabase()
@@ -19,15 +23,47 @@ async function getAmbassador(slug: string) {
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: PageProps): Promise<Metadata> {
-  const { slug } = await params;
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
   const ambassador = await getAmbassador(slug);
+  const creative = findShareCreative(query.creative);
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://campus.persevex.com"
+  ).replace(/\/$/, "");
+  const title = ambassador
+    ? `Direct stipend-based internship - ${ambassador.college}`
+    : "Direct stipend-based internship";
+  const description =
+    "Apply for Persevex internships with live industry projects, mentor guidance, credentials, and a performance-based stipend opportunity.";
+  const pageUrl = `${baseUrl}/join/${slug}?creative=${creative.id}`;
+  const imageUrl = `${baseUrl}${creative.src}`;
   return {
-    title: ambassador
-      ? `Student Opportunity - ${ambassador.college}`
-      : "Student Opportunity",
-    description:
-      "Register for official Persevex internship, project, and mentorship opportunities.",
+    metadataBase: new URL(baseUrl),
+    title,
+    description,
+    alternates: { canonical: `${baseUrl}/join/${slug}` },
+    openGraph: {
+      type: "website",
+      url: pageUrl,
+      siteName: "Persevex",
+      title,
+      description,
+      images: [
+        {
+          url: imageUrl,
+          width: creative.width,
+          height: creative.height,
+          alt: "Persevex direct stipend-based internship opportunity",
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [imageUrl],
+    },
   };
 }
 

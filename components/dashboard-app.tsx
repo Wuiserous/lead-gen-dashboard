@@ -6,19 +6,24 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  Check,
   ChevronRight,
   Clipboard,
   Copy,
+  Download,
+  ImageIcon,
   LayoutDashboard,
   Layers3,
   Link2,
   LogOut,
   Menu,
+  MessageCircle,
   PauseCircle,
   Plus,
   RefreshCw,
   Search,
   Settings2,
+  Share2,
   ShieldCheck,
   Target,
   Trash2,
@@ -40,6 +45,7 @@ import {
   clearDashboardBootstrap,
   peekDashboardBootstrap,
 } from "@/lib/dashboard-bootstrap";
+import { buildWhatsAppDraft, shareCreatives } from "@/lib/share-creatives";
 import type {
   AmbassadorPerformance,
   AppRole,
@@ -66,6 +72,23 @@ const statusLabels: Record<RegistrationStatus, string> = {
   not_interested: "Not interested",
   invalid: "Invalid",
 };
+
+async function writeClipboardText(value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("Copy failed");
+  }
+}
 
 function roleLabel(role: AppRole) {
   if (role === "admin") return "Admin";
@@ -724,6 +747,15 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               {tab === item.id && <ChevronRight size={16} />}
             </button>
           ))}
+          {data.user.role === "admin" && (
+            <button
+              onClick={() => router.push("/admin/statistics")}
+            >
+              <BarChart3 size={18} />
+              Statistics
+              <ChevronRight size={16} />
+            </button>
+          )}
         </nav>
         <div className="sidebar-bottom">
           <div className="user-mini">
@@ -1952,6 +1984,12 @@ function AmbassadorsView({
   onUpdate: DashboardUpdater;
   onReconcile: () => void;
 }) {
+  const [copyFeedback, setCopyFeedback] = useState("");
+  const [shareTarget, setShareTarget] = useState<AmbassadorPerformance | null>(null);
+  const [selectedCreativeId, setSelectedCreativeId] = useState(
+    shareCreatives[0].id as string,
+  );
+  const [shareNotice, setShareNotice] = useState("");
   const creatorNames = new Map(
     data.employees.map((employee) => [employee.id, employee.full_name]),
   );
@@ -1998,8 +2036,105 @@ function AmbassadorsView({
     onReconcile();
   }
 
-  async function copy(value: string) {
-    await navigator.clipboard.writeText(value);
+  async function copy(value: string, feedbackKey: string) {
+    try {
+      await writeClipboardText(value);
+      setCopyFeedback(feedbackKey);
+      window.setTimeout(() => {
+        setCopyFeedback((current) => current === feedbackKey ? "" : current);
+      }, 2_000);
+    } catch {
+      window.alert("Copy failed. Please select and copy the value manually.");
+    }
+  }
+
+  function selectedShareCreative() {
+    return shareCreatives.find((creative) => creative.id === selectedCreativeId) ?? shareCreatives[0];
+  }
+
+  function shareLinkFor(ambassador: AmbassadorPerformance) {
+    const base = `${publicBaseUrl()}/join/${ambassador.public_slug}`;
+    return `${base}?creative=${encodeURIComponent(selectedShareCreative().id)}`;
+  }
+
+  async function creativeFile() {
+    const creative = selectedShareCreative();
+    const response = await fetch(creative.src);
+    if (!response.ok) throw new Error("Unable to load poster");
+    const blob = await response.blob();
+    return new File([blob], `${creative.id}.jpg`, { type: "image/jpeg" });
+  }
+
+  async function sharePosterAndDraft() {
+    if (!shareTarget) return;
+    setShareNotice("");
+    try {
+      const file = await creativeFile();
+      const draft = buildWhatsAppDraft(shareLinkFor(shareTarget));
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: "Persevex internship opportunity",
+          text: draft,
+          files: [file],
+        });
+        setShareNotice("Poster and draft sent to your share sheet.");
+        return;
+      }
+      await writeClipboardText(draft);
+      downloadSelectedPoster();
+      setShareNotice("Draft copied and poster downloaded. Attach the poster in WhatsApp, then paste the draft.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setShareNotice("Sharing was blocked by this browser. Use Copy draft and Download poster below.");
+    }
+  }
+
+  function downloadSelectedPoster() {
+    const creative = selectedShareCreative();
+    const anchor = document.createElement("a");
+    anchor.href = creative.src;
+    anchor.download = `persevex-${creative.id}.jpg`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setShareNotice("Poster downloaded.");
+  }
+
+  async function copySelectedPoster() {
+    try {
+      const file = await creativeFile();
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas unavailable");
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      const png = await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob(
+          (blob) => blob ? resolve(blob) : reject(new Error("Image conversion failed")),
+          "image/png",
+        ),
+      );
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": png }),
+      ]);
+      setShareNotice("Poster copied. Paste it into WhatsApp, then add the copied draft as its caption.");
+    } catch {
+      downloadSelectedPoster();
+      setShareNotice("Image clipboard is not supported here, so the poster was downloaded instead.");
+    }
+  }
+
+  function openWhatsAppDraft() {
+    if (!shareTarget) return;
+    const draft = buildWhatsAppDraft(shareLinkFor(shareTarget));
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(draft)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   async function remove(
@@ -2078,7 +2213,8 @@ function AmbassadorsView({
           const pending = ambassador.id.startsWith("pending-");
           const link = `${publicBaseUrl()}/join/${ambassador.public_slug}`;
           const progressLink = `${publicBaseUrl()}/ca/${ambassador.progress_key}`;
-          const draft = `Hi! Persevex is accepting student registrations for internship and career opportunities across 23 domains, real-world projects, live mentor access, and up to INR 18,000-25,000 stipend based upon performance.\n\nChoose your preferred domain and register through my official invitation:\n${link}`;
+          const referralCopied = copyFeedback === `${ambassador.id}:referral`;
+          const progressCopied = copyFeedback === `${ambassador.id}:progress`;
           const percentage = Math.min(
             100,
             Math.round((ambassador.registration_count / ambassador.target) * 100),
@@ -2107,9 +2243,31 @@ function AmbassadorsView({
               </div>
               <div className="mini-track large"><span style={{ width: `${percentage}%` }} /></div>
               <div className="link-actions">
-                <button disabled={pending} onClick={() => void copy(draft)}><Copy size={16} /> WhatsApp draft</button>
-                <button disabled={pending} onClick={() => void copy(link)}><Link2 size={16} /> Referral link</button>
-                <button disabled={pending} onClick={() => void copy(progressLink)}><Target size={16} /> Progress link</button>
+                <button
+                  disabled={pending}
+                  onClick={() => {
+                    setShareTarget(ambassador);
+                    setShareNotice("");
+                  }}
+                >
+                  <MessageCircle size={16} /> WhatsApp draft
+                </button>
+                <button
+                  className={referralCopied ? "copied" : ""}
+                  disabled={pending}
+                  onClick={() => void copy(link, `${ambassador.id}:referral`)}
+                >
+                  {referralCopied ? <Check size={16} /> : <Link2 size={16} />}
+                  {referralCopied ? "Copied!" : "Referral link"}
+                </button>
+                <button
+                  className={progressCopied ? "copied" : ""}
+                  disabled={pending}
+                  onClick={() => void copy(progressLink, `${ambassador.id}:progress`)}
+                >
+                  {progressCopied ? <Check size={16} /> : <Target size={16} />}
+                  {progressCopied ? "Copied!" : "Progress link"}
+                </button>
               </div>
               <button
                 className="view-group-button"
@@ -2173,6 +2331,85 @@ function AmbassadorsView({
           />
         )}
       </div>
+      {shareTarget && (
+        <div className="modal-backdrop share-draft-backdrop" role="presentation">
+          <section
+            className="share-draft-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-draft-title"
+          >
+            <button
+              type="button"
+              className="modal-close"
+              aria-label="Close WhatsApp draft"
+              onClick={() => setShareTarget(null)}
+            >
+              <X size={19} />
+            </button>
+            <div className="share-draft-heading">
+              <span className="eyebrow">WHATSAPP CAMPAIGN</span>
+              <h2 id="share-draft-title">Choose the poster students will see</h2>
+              <p>The referral link is attached automatically and carries the selected poster as its WhatsApp preview.</p>
+            </div>
+
+            <div className="share-creative-grid">
+              {shareCreatives.map((creative) => (
+                <button
+                  type="button"
+                  key={creative.id}
+                  className={selectedCreativeId === creative.id ? "selected" : ""}
+                  aria-pressed={selectedCreativeId === creative.id}
+                  onClick={() => {
+                    setSelectedCreativeId(creative.id);
+                    setShareNotice("");
+                  }}
+                >
+                  <Image src={creative.src} alt={creative.name} width={220} height={300} />
+                  <span>{selectedCreativeId === creative.id ? <Check size={14} /> : <ImageIcon size={14} />}{creative.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="share-draft-preview">
+              <span>Message preview</span>
+              <pre>{buildWhatsAppDraft(shareLinkFor(shareTarget))}</pre>
+            </div>
+
+            <div className="share-draft-primary-actions">
+              <button type="button" className="primary-button" onClick={() => void sharePosterAndDraft()}>
+                <Share2 size={17} /> Share poster + text
+              </button>
+              <button type="button" className="whatsapp-button" onClick={openWhatsAppDraft}>
+                <MessageCircle size={17} /> Open WhatsApp
+              </button>
+            </div>
+            <div className="share-draft-secondary-actions">
+              <button
+                type="button"
+                className={copyFeedback === "share:draft" ? "copied" : ""}
+                onClick={() => void copy(
+                  buildWhatsAppDraft(shareLinkFor(shareTarget)),
+                  "share:draft",
+                )}
+              >
+                {copyFeedback === "share:draft" ? <Check size={16} /> : <Copy size={16} />}
+                {copyFeedback === "share:draft" ? "Draft copied!" : "Copy draft"}
+              </button>
+              <button type="button" onClick={() => void copySelectedPoster()}>
+                <Copy size={16} /> Copy poster
+              </button>
+              <button type="button" onClick={downloadSelectedPoster}>
+                <Download size={16} /> Download poster
+              </button>
+            </div>
+            <p className="share-draft-compatibility">
+              On supported phones, “Share poster + text” sends both through the native share sheet. WhatsApp Web may require attaching the poster and pasting the copied draft separately.
+            </p>
+            {shareNotice && <p className="share-draft-notice" aria-live="polite">{shareNotice}</p>}
+          </section>
+        </div>
+      )}
     </section>
   );
 }

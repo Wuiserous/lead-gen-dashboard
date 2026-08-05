@@ -134,3 +134,62 @@ export type DashboardLiveUpdate = {
   summary: DashboardSummary | null;
   pagination: DashboardPagination | null;
 };
+
+export type AdminStatistics = {
+  overview: {
+    registrations: number;
+    converted: number;
+    conversionRate: number;
+    todayRegistrations: number;
+    invalidRegistrations: number;
+    activeTeams: number;
+    activeEmployees: number;
+    activeAmbassadors: number;
+    qualifiedAmbassadors: number;
+  };
+  statusBreakdown: Array<{ status: RegistrationStatus; count: number }>;
+  domainBreakdown: Array<{
+    domain: string;
+    registrations: number;
+    converted: number;
+  }>;
+  daily: Array<{
+    date: string;
+    registrations: number;
+    converted: number;
+  }>;
+  teams: Array<{
+    id: string;
+    name: string;
+    members: number;
+    ambassadors: number;
+    qualified_ambassadors: number;
+    registrations: number;
+    converted: number;
+  }>;
+  members: Array<{
+    id: string;
+    name: string;
+    role: "sales" | "team_lead";
+    team_id: string | null;
+    team_name: string | null;
+    ambassadors: number;
+    qualified_ambassadors: number;
+    registrations: number;
+    converted: number;
+  }>;
+  ambassadors: Array<{
+    id: string;
+    name: string;
+    college: string;
+    sales_id: string;
+    creator_name: string | null;
+    team_id: string;
+    team_name: string | null;
+    target: number;
+    qualified: boolean;
+    registrations: number;
+    converted: number;
+  }>;
+  generatedAt: string;
+};
