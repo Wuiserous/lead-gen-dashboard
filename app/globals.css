@@ -2575,6 +2575,67 @@ p {
   font-size: 0.78rem;
 }
 
+.export-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 7px;
+  color: var(--green);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.table-toolbar-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.export-data-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.export-data-control select {
+  min-width: 205px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0 32px 0 11px;
+  background: var(--white);
+  color: var(--navy);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.export-csv-button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.export-csv-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.sr-only {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .search-box {
   width: min(360px, 100%);
   min-height: 42px;
@@ -3584,6 +3645,19 @@ p {
   .table-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .table-toolbar-actions,
+  .export-data-control {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .export-data-control label,
+  .export-data-control select,
+  .export-csv-button {
+    width: 100%;
   }
 
   .search-box {

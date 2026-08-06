@@ -61,6 +61,7 @@ import type {
 type Tab = "overview" | "teams" | "employees" | "ambassadors" | "leads";
 type ModalName = "team" | "employee" | "import" | "ambassador" | null;
 type DateRange = ReportingDateRange;
+type ExportScope = "current" | "group" | "all";
 type DashboardUpdater = (updater: (current: DashboardData) => DashboardData) => void;
 
 const statusLabels: Record<RegistrationStatus, string> = {
@@ -183,7 +184,12 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [groupFilter, setGroupFilter] = useState("all");
   const [memberFilter, setMemberFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
+  const [exportScope, setExportScope] = useState<ExportScope>("current");
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState("");
   const [page, setPage] = useState(1);
+  const effectiveExportScope: ExportScope =
+    exportScope === "group" && groupFilter === "all" ? "current" : exportScope;
   const loadedOnce = useRef(Boolean(initialData));
   const loadSequence = useRef(0);
   const visibleLoadInFlight = useRef(false);
@@ -654,6 +660,53 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     router.refresh();
   }
 
+  async function exportRegistrations() {
+    setExporting(true);
+    setExportNotice("");
+    setError("");
+
+    const params = new URLSearchParams({ mode: effectiveExportScope });
+    if (effectiveExportScope === "current") {
+      if (teamFilter !== "all") params.set("teamId", teamFilter);
+      if (memberFilter !== "all") params.set("memberId", memberFilter);
+      if (groupFilter !== "all") params.set("groupId", groupFilter);
+      if (dateRange !== "all") params.set("dateRange", dateRange);
+      if (debouncedSearch) params.set("search", debouncedSearch);
+    } else if (effectiveExportScope === "group" && groupFilter !== "all") {
+      params.set("groupId", groupFilter);
+    }
+
+    try {
+      const response = await dashboardMutation(`/api/registrations/export?${params.toString()}`);
+      if (!response.ok) {
+        setError(await readError(response));
+        return;
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1]
+        ?? `persevex-registrations-${new Date().toISOString().slice(0, 10)}.csv`;
+      const downloadUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = downloadUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(downloadUrl);
+
+      const rowCount = Number(response.headers.get("X-Export-Row-Count") ?? 0);
+      setExportNotice(
+        rowCount === 1 ? "1 registration exported." : `${rowCount} registrations exported.`,
+      );
+    } catch {
+      setError("Unable to download the CSV right now.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function changeTab(nextTab: Tab) {
     if (nextTab !== "leads" && (search || debouncedSearch)) {
       setSearch("");
@@ -943,15 +996,43 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 <div>
                   <h2>Student registrations</h2>
                   <p>{data.pagination.totalRows} registrations in this view</p>
+                  {exportNotice && <span className="export-notice"><Check size={13} /> {exportNotice}</span>}
                 </div>
-                <label className="search-box">
-                  <Search size={17} />
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search student, phone, or domain"
-                  />
-                </label>
+                <div className="table-toolbar-actions">
+                  <label className="search-box">
+                    <Search size={17} />
+                    <input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Search student, phone, or domain"
+                    />
+                  </label>
+                  <div className="export-data-control">
+                    <label>
+                      <span className="sr-only">CSV export scope</span>
+                      <select
+                        value={effectiveExportScope}
+                        onChange={(event) => setExportScope(event.target.value as ExportScope)}
+                        aria-label="CSV export scope"
+                      >
+                        <option value="current">Current filtered results</option>
+                        {groupFilter !== "all" && (
+                          <option value="group">Selected group · full history</option>
+                        )}
+                        <option value="all">All accessible registrations</option>
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="secondary-button export-csv-button"
+                      onClick={() => void exportRegistrations()}
+                      disabled={exporting}
+                    >
+                      {exporting ? <RefreshCw size={16} className="spin" /> : <Download size={16} />}
+                      {exporting ? "Preparing..." : "Export CSV"}
+                    </button>
+                  </div>
+                </div>
               </div>
               <ReportingFilters
                 data={data}
