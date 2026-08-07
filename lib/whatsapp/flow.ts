@@ -288,7 +288,7 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         ? "The program combines structured learning with practical projects and mentor support."
         : primaryGoal === "certificates"
           ? "Applicable certificates are issued after their respective completion requirements are met."
-          : "Up to ₹18K–₹25K stipend based on performance. It is not guaranteed at registration.";
+          : "Up to ₹18K–₹25K stipend based on performance.";
     return {
       message: { ...startQuestion, body: `${prefix}\n\nWhen would you prefer to begin?` },
       updates: { primary_goal: primaryGoal, flow_step: "ask_start", lead_score: score(currentScore, 8) },
@@ -411,7 +411,7 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
     includesAny(reply, ["call me now", "am -", "pm -", "tomorrow morning", "tomorrow afternoon", "tomorrow evening"])
   ) {
     return {
-      message: { kind: "text", body: `Your callback preference has been saved: ${rawReply.trim()}. Your assigned advisor has been notified.` },
+      message: { kind: "text", body: `Your callback preference has been saved: ${rawReply.trim()}. Your assigned advisor will soon contact you.` },
       updates: {
         state: "advisor_requested",
         flow_step: "awaiting_human",
