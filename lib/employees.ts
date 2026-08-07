@@ -105,6 +105,7 @@ export async function createEmployee(
     role,
     team_id: teamId,
     active: true,
+    wati_enabled: false,
     created_at: new Date().toISOString(),
   };
 }

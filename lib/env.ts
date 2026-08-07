@@ -30,3 +30,34 @@ export function registrationRateLimitSecret() {
     serverSupabaseEnv().secretKey
   );
 }
+
+function optional(value: string | undefined) {
+  const normalized = value?.trim();
+  return normalized || null;
+}
+
+export function watiEnv() {
+  return {
+    endpoint: optional(process.env.WATI_API_ENDPOINT)?.replace(/\/$/, "") ?? null,
+    token: optional(process.env.WATI_API_TOKEN),
+    channel: optional(process.env.WATI_CHANNEL),
+    apiVersion: optional(process.env.WATI_API_VERSION) === "v3" ? "v3" : "v1",
+    webhookSecret: optional(process.env.WATI_WEBHOOK_SECRET),
+    welcomeTemplate:
+      optional(process.env.WATI_WELCOME_TEMPLATE) ?? "persevex_lead_welcome_v1",
+    reminderTemplate:
+      optional(process.env.WATI_REMINDER_TEMPLATE) ?? "persevex_lead_reminder_v1",
+    finalReminderTemplate:
+      optional(process.env.WATI_FINAL_REMINDER_TEMPLATE) ??
+      "persevex_lead_final_reminder_v1",
+  };
+}
+
+export function watiConfigured() {
+  const config = watiEnv();
+  return Boolean(config.endpoint && config.token);
+}
+
+export function cronSecret() {
+  return optional(process.env.CRON_SECRET);
+}

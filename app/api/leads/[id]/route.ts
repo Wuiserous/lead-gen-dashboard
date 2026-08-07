@@ -44,13 +44,37 @@ export async function PATCH(
   if (error) return errorResponse("Unable to update the registration.", 500);
   if (!lead) return errorResponse("Registration not found or unavailable.", 404);
 
-  await admin.from("audit_events").insert({
-    actor_id: user.id,
-    action: "registration_updated",
-    entity_type: "registration",
-    entity_id: id,
-    details: { status },
-  });
+  const terminalWhatsappState =
+    status === "converted"
+      ? "converted"
+      : status === "not_interested"
+        ? "not_interested"
+        : status === "invalid"
+          ? "failed"
+          : null;
+  const sideEffects: Array<PromiseLike<unknown>> = [
+    admin.from("audit_events").insert({
+      actor_id: user.id,
+      action: "registration_updated",
+      entity_type: "registration",
+      entity_id: id,
+      details: { status },
+    }),
+  ];
+  if (terminalWhatsappState) {
+    sideEffects.push(
+      admin
+        .from("whatsapp_conversations")
+        .update({ state: terminalWhatsappState, bot_paused: true, flow_step: "closed" })
+        .eq("registration_id", id),
+      admin
+        .from("whatsapp_jobs")
+        .update({ status: "cancelled", completed_at: new Date().toISOString() })
+        .eq("registration_id", id)
+        .eq("status", "pending"),
+    );
+  }
+  await Promise.all(sideEffects);
 
   return NextResponse.json({ lead });
 }

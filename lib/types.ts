@@ -8,6 +8,7 @@ export type Profile = {
   role: AppRole;
   team_id: string | null;
   active: boolean;
+  wati_enabled?: boolean;
   created_at: string;
 };
 
@@ -62,6 +63,50 @@ export type RegistrationStatus =
   | "not_interested"
   | "invalid";
 
+export type WhatsAppStage =
+  | "not_started"
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "engaged"
+  | "qualifying"
+  | "qualified"
+  | "advisor_requested"
+  | "follow_up"
+  | "enrollment_ready"
+  | "converted"
+  | "not_interested"
+  | "opted_out"
+  | "failed";
+
+export type WhatsAppConversationSummary = {
+  id: string;
+  state: WhatsAppStage;
+  lead_score: number;
+  urgency: "low" | "medium" | "high";
+  bot_paused: boolean;
+  opted_out_at: string | null;
+  last_inbound_at: string | null;
+  last_outbound_at: string | null;
+  follow_up_at: string | null;
+  last_message_status: string | null;
+  last_error: string | null;
+  updated_at: string;
+};
+
+export type WhatsAppMessage = {
+  id: string;
+  direction: "inbound" | "outbound" | "system";
+  message_type: string;
+  body: string;
+  intent: string | null;
+  template_name: string | null;
+  status: string;
+  error_detail: string | null;
+  created_at: string;
+};
+
 export type Registration = {
   id: string;
   ambassador_id: string;
@@ -76,6 +121,7 @@ export type Registration = {
   updated_at: string;
   anonymized_at: string | null;
   ambassador?: { name: string; college: string } | null;
+  whatsapp?: WhatsAppConversationSummary | WhatsAppConversationSummary[] | null;
 };
 
 export type DashboardSummary = {

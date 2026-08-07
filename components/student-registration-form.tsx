@@ -43,6 +43,7 @@ export function StudentRegistrationForm({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [whatsappQueued, setWhatsAppQueued] = useState(false);
   const [confirmingPhone, setConfirmingPhone] = useState(false);
 
   function reviewDetails(event: React.FormEvent) {
@@ -69,6 +70,7 @@ export function StudentRegistrationForm({
         setError(result.error ?? "Unable to register. Please try again.");
         return;
       }
+      setWhatsAppQueued(Boolean(result.whatsappQueued));
       setDone(true);
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
@@ -88,8 +90,9 @@ export function StudentRegistrationForm({
         <span className="eyebrow">REGISTRATION COMPLETE</span>
         <h2>You are successfully registered.</h2>
         <p>
-          Your details have been shared with the official Persevex team. Our
-          team will contact you soon with the next steps.
+          {whatsappQueued
+            ? "Your details have been shared with the official Persevex team. Check WhatsApp for your internship details and next steps."
+            : "Your details have been shared with the official Persevex team. The team will contact you soon with the relevant next steps."}
         </p>
       </div>
     );
@@ -108,7 +111,7 @@ export function StudentRegistrationForm({
         </div>
         {error && <div className="alert error">{error}</div>}
         <button className="gold-button wide" type="submit" disabled={loading}>
-          {loading ? "Registering..." : "Yes, register me"}
+          {loading ? "Registering..." : "Confirm & register"}
           {!loading && <CheckCircle2 size={18} />}
         </button>
         <button
@@ -191,6 +194,11 @@ export function StudentRegistrationForm({
         />
       </label>
       {error && <div className="alert error">{error}</div>}
+      <p className="whatsapp-opt-in-note">
+        By registering, you agree to receive internship details, application
+        updates and counsellor assistance from Persevex on WhatsApp. Reply STOP
+        anytime to unsubscribe.
+      </p>
       <button className="gold-button wide" type="submit">
         Review my number
         <ArrowRight size={18} />

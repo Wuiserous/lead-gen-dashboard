@@ -22,6 +22,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Send,
   Settings2,
   Share2,
   ShieldCheck,
@@ -56,6 +57,8 @@ import type {
   Registration,
   RegistrationStatus,
   TeamPerformance,
+  WhatsAppConversationSummary,
+  WhatsAppMessage,
 } from "@/lib/types";
 
 type Tab = "overview" | "teams" | "employees" | "ambassadors" | "leads";
@@ -104,6 +107,38 @@ function formatDate(value: string) {
     year: "numeric",
   });
 }
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function whatsappFor(lead: Registration) {
+  const value = lead.whatsapp;
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
+const whatsappStageLabels: Record<string, string> = {
+  not_started: "Not started",
+  queued: "Queued",
+  sent: "Sent",
+  delivered: "Delivered",
+  read: "Read",
+  engaged: "Engaged",
+  qualifying: "Qualifying",
+  qualified: "Qualified",
+  advisor_requested: "Advisor requested",
+  follow_up: "Follow-up",
+  enrollment_ready: "Enrollment ready",
+  converted: "Converted",
+  not_interested: "Not interested",
+  opted_out: "Opted out",
+  failed: "Failed",
+};
 
 function inDateRange(value: string, range: DateRange) {
   return isWithinReportingRange(value, range);
@@ -1066,6 +1101,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               <LeadsTable
                 registrations={filteredRegistrations}
                 canDelete={data.user.role !== "sales"}
+                whatsappAccess={data.user.role === "admin" || data.user.role === "sales"}
                 onUpdate={updateDashboard}
                 onReconcile={scheduleReconciliation}
               />
@@ -1830,7 +1866,11 @@ function EmployeesView({
           ? {
               ...employee,
               ...(typeof body.active === "boolean" ? { active: body.active } : {}),
+              ...(body.active === false ? { wati_enabled: false } : {}),
               ...(typeof body.teamId === "string" ? { team_id: body.teamId } : {}),
+              ...(typeof body.watiEnabled === "boolean"
+                ? { wati_enabled: body.watiEnabled }
+                : {}),
             }
           : employee,
       ),
@@ -1957,6 +1997,19 @@ function EmployeesView({
     onReconcile();
   }
 
+  function toggleEmployeeWati(employee: Profile) {
+    const enable = !employee.wati_enabled;
+    if (
+      enable &&
+      !window.confirm(
+        `Enable WATI for future registrations assigned to ${employee.full_name}? Existing registrations will not be messaged. Only continue after the approved templates and WATI credentials are ready.`,
+      )
+    ) {
+      return;
+    }
+    void patchEmployee(employee.id, { watiEnabled: enable });
+  }
+
   return (
     <section>
       <div className="table-toolbar">
@@ -1964,14 +2017,16 @@ function EmployeesView({
           <h2>{data.user.role === "admin" ? "Employee access" : "Assigned team"}</h2>
           <p>
             {data.user.role === "admin"
-              ? "Create accounts, assign teams, and suspend access."
+              ? "Create accounts, assign teams, suspend access, and control WATI employee by employee."
               : "Performance and assignments inside your team."}
           </p>
         </div>
       </div>
       <div className="data-table">
-        <div className="data-row employee-grid table-header">
-          <span>Employee</span><span>Role</span><span>Team</span><span>Status</span><span>Performance</span><span />
+        <div className={`data-row employee-grid ${data.user.role === "admin" ? "with-wati" : ""} table-header`}>
+          <span>Employee</span><span>Role</span><span>Team</span><span>Status</span>
+          {data.user.role === "admin" && <span>WATI</span>}
+          <span>Performance</span><span />
         </div>
         {data.employees.map((employee) => {
           const pending = employee.id.startsWith("pending-");
@@ -1979,7 +2034,7 @@ function EmployeesView({
             (item) => item.id === employee.id,
           );
           return (
-            <div className="data-row employee-grid" key={employee.id}>
+            <div className={`data-row employee-grid ${data.user.role === "admin" ? "with-wati" : ""}`} key={employee.id}>
               <div className="identity-cell">
                 <span className="avatar">{employee.full_name[0]}</span>
                 <div><strong>{employee.full_name}</strong><small>{employee.email}</small></div>
@@ -2004,6 +2059,23 @@ function EmployeesView({
               <span className={`status-dot ${employee.active ? "active" : ""}`}>
                 {pending ? "Creating" : employee.active ? "Active" : "Suspended"}
               </span>
+              {data.user.role === "admin" && (
+                employee.role === "admin" ? (
+                  <span className="muted">—</span>
+                ) : (
+                  <button
+                    type="button"
+                    className={`wati-employee-toggle ${employee.wati_enabled ? "enabled" : ""}`}
+                    aria-pressed={Boolean(employee.wati_enabled)}
+                    disabled={pending || !employee.active}
+                    onClick={() => toggleEmployeeWati(employee)}
+                    title="Controls WATI only for future registrations assigned to this employee"
+                  >
+                    <MessageCircle size={14} />
+                    <span>{employee.wati_enabled ? "Enabled" : "Off"}</span>
+                  </button>
+                )
+              )}
               <span>
                 {performance
                   ? `${performance.registration_count} registrations`
@@ -2504,24 +2576,29 @@ function AmbassadorsView({
 function LeadsTable({
   registrations,
   canDelete,
+  whatsappAccess,
   onUpdate,
   onReconcile,
 }: {
   registrations: Registration[];
   canDelete: boolean;
+  whatsappAccess: boolean;
   onUpdate: DashboardUpdater;
   onReconcile: () => void;
 }) {
   return (
     <div className="data-table">
-      <div className="data-row lead-grid table-header">
-        <span>Student</span><span>Group / CA</span><span>Domain</span><span>Registered</span><span>Status</span><span>Follow-up note</span><span />
+      <div className={`data-row lead-grid ${whatsappAccess ? "" : "no-whatsapp"} table-header`}>
+        <span>Student</span><span>Group / CA</span><span>Domain</span><span>Registered</span>
+        {whatsappAccess && <span>WhatsApp</span>}
+        <span>Status</span><span>Follow-up note</span><span />
       </div>
       {registrations.map((lead) => (
         <LeadRow
           key={lead.id}
           lead={lead}
           canDelete={canDelete}
+          whatsappAccess={whatsappAccess}
           onUpdate={onUpdate}
           onReconcile={onReconcile}
         />
@@ -2539,17 +2616,21 @@ function LeadsTable({
 function LeadRow({
   lead,
   canDelete,
+  whatsappAccess,
   onUpdate,
   onReconcile,
 }: {
   lead: Registration;
   canDelete: boolean;
+  whatsappAccess: boolean;
   onUpdate: DashboardUpdater;
   onReconcile: () => void;
 }) {
   const [status, setStatus] = useState<RegistrationStatus>(lead.status);
   const [note, setNote] = useState(lead.note);
   const [saving, setSaving] = useState(false);
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
+  const whatsapp = whatsappFor(lead);
 
   async function save() {
     const previousStatus = lead.status;
@@ -2645,7 +2726,7 @@ function LeadRow({
   }
 
   return (
-    <div className="data-row lead-grid">
+    <div className={`data-row lead-grid ${whatsappAccess ? "" : "no-whatsapp"}`}>
       <div className="identity-cell">
         <span className="avatar">{lead.name[0]}</span>
         <div><strong>{lead.name}</strong><small>{lead.phone}</small></div>
@@ -2653,6 +2734,20 @@ function LeadRow({
       <span>{ambassadorLabel(lead)}</span>
       <span className="domain-tag">{lead.preferred_domain}</span>
       <span>{formatDate(lead.created_at)}</span>
+      {whatsappAccess && (
+        <button
+          type="button"
+          className={`whatsapp-stage-button ${whatsapp?.urgency ?? "low"}`}
+          onClick={() => setShowWhatsApp(true)}
+          title="Open WhatsApp conversation"
+        >
+          <MessageCircle size={14} />
+          <span>
+            <strong>{whatsappStageLabels[whatsapp?.state ?? "not_started"] ?? whatsapp?.state}</strong>
+            <small>{whatsapp ? `${whatsapp.lead_score}/100` : "Not linked"}</small>
+          </span>
+        </button>
+      )}
       <select value={status} onChange={(event) => setStatus(event.target.value as RegistrationStatus)}>
         {Object.entries(statusLabels).map(([value, label]) => (
           <option key={value} value={value}>{label}</option>
@@ -2680,6 +2775,213 @@ function LeadRow({
           </button>
         )}
       </div>
+      {whatsappAccess && showWhatsApp && (
+        <WhatsAppLeadPanel
+          lead={lead}
+          summary={whatsapp}
+          onClose={() => setShowWhatsApp(false)}
+          onReconcile={onReconcile}
+        />
+      )}
+    </div>
+  );
+}
+
+type WhatsAppConversationDetail = WhatsAppConversationSummary & {
+  flow_step: string;
+  wa_id: string;
+  conversation_window_expires_at: string | null;
+  registration: {
+    id: string;
+    name: string;
+    phone: string;
+    preferred_domain: string;
+    status: RegistrationStatus;
+    note: string;
+  } | Array<{
+    id: string;
+    name: string;
+    phone: string;
+    preferred_domain: string;
+    status: RegistrationStatus;
+    note: string;
+  }>;
+  sales: { id: string; full_name: string; email: string } | Array<{
+    id: string;
+    full_name: string;
+    email: string;
+  }>;
+};
+
+function WhatsAppLeadPanel({
+  lead,
+  summary,
+  onClose,
+  onReconcile,
+}: {
+  lead: Registration;
+  summary: WhatsAppConversationSummary | null;
+  onClose: () => void;
+  onReconcile: () => void;
+}) {
+  const [conversation, setConversation] = useState<WhatsAppConversationDetail | null>(null);
+  const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [sessionOpen, setSessionOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void fetch(`/api/whatsapp/conversations/${lead.id}`, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await readError(response));
+        return response.json();
+      })
+      .then((payload) => {
+        if (!active) return;
+        setConversation(payload.conversation);
+        setMessages(payload.messages ?? []);
+        setSessionOpen(Boolean(payload.sessionOpen));
+        setError("");
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(loadError instanceof Error ? loadError.message : "Unable to load conversation.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [lead.id, summary?.updated_at]);
+
+  async function toggleAutomation() {
+    if (!conversation) return;
+    setBusy(true);
+    const response = await dashboardMutation(`/api/whatsapp/conversations/${lead.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: conversation.bot_paused ? "resume" : "pause" }),
+    });
+    setBusy(false);
+    if (!response.ok) {
+      setError(await readError(response));
+      return;
+    }
+    const payload = await response.json();
+    setConversation(payload.conversation);
+    onReconcile();
+  }
+
+  async function sendMessage(event: React.FormEvent) {
+    event.preventDefault();
+    const outgoing = message.trim();
+    if (!outgoing) return;
+    setBusy(true);
+    setError("");
+    const response = await dashboardMutation(`/api/whatsapp/conversations/${lead.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: outgoing }),
+    });
+    setBusy(false);
+    if (!response.ok) {
+      setError(await readError(response));
+      return;
+    }
+    setMessages((current) => [
+      ...current,
+      {
+        id: `pending-${Date.now()}`,
+        direction: "outbound",
+        message_type: "text",
+        body: outgoing,
+        intent: "manual_reply",
+        template_name: null,
+        status: "queued",
+        error_detail: null,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+    setMessage("");
+    setConversation((current) => (current ? { ...current, bot_paused: true } : current));
+    onReconcile();
+  }
+
+  return (
+    <div className="modal-backdrop whatsapp-panel-backdrop" onMouseDown={onClose}>
+      <section className="whatsapp-lead-panel" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="whatsapp-panel-header">
+          <div>
+            <span className="eyebrow">WATI CONVERSATION</span>
+            <h2>{lead.name}</h2>
+            <p>{lead.phone} · {lead.preferred_domain}</p>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close WhatsApp conversation">
+            <X size={19} />
+          </button>
+        </header>
+
+        {loading ? (
+          <div className="whatsapp-panel-loading"><RefreshCw className="spin" size={20} /> Loading conversation…</div>
+        ) : error && !conversation ? (
+          <div className="alert error">{error}</div>
+        ) : conversation ? (
+          <>
+            <div className="whatsapp-conversation-meta">
+              <span><small>Stage</small><strong>{whatsappStageLabels[conversation.state] ?? conversation.state}</strong></span>
+              <span><small>Lead score</small><strong>{conversation.lead_score}/100</strong></span>
+              <span><small>Automation</small><strong>{conversation.bot_paused ? "Paused" : "Active"}</strong></span>
+              <button type="button" onClick={() => void toggleAutomation()} disabled={busy || Boolean(conversation.opted_out_at)}>
+                {conversation.bot_paused ? <RefreshCw size={15} /> : <PauseCircle size={15} />}
+                {conversation.bot_paused ? "Resume bot" : "Pause bot"}
+              </button>
+            </div>
+
+            {conversation.opted_out_at && (
+              <div className="alert error">The student opted out. Outbound messaging is disabled.</div>
+            )}
+            {error && <div className="alert error">{error}</div>}
+
+            <div className="whatsapp-message-list">
+              {!messages.length && (
+                <div className="whatsapp-empty-thread">
+                  <MessageCircle size={24} />
+                  <strong>No WhatsApp messages yet</strong>
+                  <span>The approved welcome template will appear here after WATI sends it.</span>
+                </div>
+              )}
+              {messages.map((item) => (
+                <article key={item.id} className={`whatsapp-bubble ${item.direction}`}>
+                  <p>{item.body}</p>
+                  <small>{formatDateTime(item.created_at)} · {item.status}</small>
+                  {item.error_detail && <em>{item.error_detail}</em>}
+                </article>
+              ))}
+            </div>
+
+            <form className="whatsapp-composer" onSubmit={sendMessage}>
+              <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                placeholder={sessionOpen ? "Reply as the assigned Persevex team…" : "Waiting for the student to reply…"}
+                maxLength={4000}
+                disabled={busy || !sessionOpen || Boolean(conversation.opted_out_at)}
+              />
+              <button type="submit" disabled={busy || !sessionOpen || !message.trim() || Boolean(conversation.opted_out_at)}>
+                <Send size={17} /> Send
+              </button>
+            </form>
+            {!sessionOpen && !conversation.opted_out_at && (
+              <p className="whatsapp-session-note">
+                Free-form replies unlock after the student responds. Outside the 24-hour window, use an approved WATI template.
+              </p>
+            )}
+          </>
+        ) : null}
+      </section>
     </div>
   );
 }

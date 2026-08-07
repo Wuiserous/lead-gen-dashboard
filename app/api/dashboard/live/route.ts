@@ -41,6 +41,12 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminSupabase();
+  const employeeSelect = user.role === "admin"
+    ? "id,full_name,email,phone,role,team_id,active,wati_enabled,created_at"
+    : "id,full_name,email,phone,role,team_id,active,created_at";
+  const registrationSelect = user.role === "admin" || user.role === "sales"
+    ? "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
+    : "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)";
   const { data: rawEvent, error: eventError } = await admin
     .from("activity_events")
     .select(
@@ -92,9 +98,7 @@ export async function GET(request: Request) {
     isRegistrationEvent && event.event_type !== "registration_deleted" && event.entity_id
       ? admin
           .from("registrations")
-          .select(
-            "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)",
-          )
+          .select(registrationSelect)
           .eq("id", event.entity_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null });
@@ -113,7 +117,7 @@ export async function GET(request: Request) {
     isEmployeeEvent && event.event_type !== "employee_deleted" && event.entity_id
       ? admin
           .from("profiles")
-          .select("id,full_name,email,phone,role,team_id,active,created_at")
+          .select(employeeSelect)
           .eq("id", event.entity_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null });

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { registrationRateLimitSecret } from "@/lib/env";
 import { isInternshipDomain } from "@/lib/domains";
 import { errorResponse } from "@/lib/http";
@@ -8,6 +8,7 @@ import {
   normalizeIndianPhone,
   secureHash,
 } from "@/lib/validation";
+import { dispatchWhatsAppJobs } from "@/lib/whatsapp/dispatch";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -80,5 +81,28 @@ export async function POST(request: Request) {
     return errorResponse("Unable to complete registration right now.", 500);
   }
 
-  return NextResponse.json({ registered: true, registrationId: data });
+  const { data: queuedJob } = await admin
+    .from("whatsapp_jobs")
+    .select("id")
+    .eq("registration_id", data)
+    .eq("status", "pending")
+    .limit(1)
+    .maybeSingle();
+  const whatsappQueued = Boolean(queuedJob);
+
+  if (whatsappQueued) {
+    after(async () => {
+      try {
+        await dispatchWhatsAppJobs({ limit: 10 });
+      } catch (dispatchError) {
+        console.error("Immediate WhatsApp dispatch failed", dispatchError);
+      }
+    });
+  }
+
+  return NextResponse.json({
+    registered: true,
+    registrationId: data,
+    whatsappQueued,
+  });
 }

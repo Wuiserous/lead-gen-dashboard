@@ -21,7 +21,7 @@ export async function PATCH(
   const admin = createAdminSupabase();
   const { data: profile } = await admin
     .from("profiles")
-    .select("id,role,team_id,active")
+    .select("id,role,team_id,active,wati_enabled")
     .eq("id", id)
     .maybeSingle();
   if (!profile || profile.role === "admin") {
@@ -30,7 +30,12 @@ export async function PATCH(
 
   let nextActive = profile.active;
   let nextTeamId = profile.team_id;
+  let nextWatiEnabled =
+    typeof body.watiEnabled === "boolean"
+      ? body.watiEnabled
+      : profile.wati_enabled;
   if (typeof body.active === "boolean") nextActive = body.active;
+  if (!nextActive) nextWatiEnabled = false;
   if (body.teamId) {
     const teamId = cleanText(body.teamId, 80);
     const { data: team } = await admin
@@ -42,26 +47,42 @@ export async function PATCH(
     if (!team) return errorResponse("Select an active team.");
     nextTeamId = teamId;
   }
-  if (nextActive === profile.active && nextTeamId === profile.team_id) {
+  const employeeAccessChanged =
+    nextActive !== profile.active || nextTeamId !== profile.team_id;
+  const watiChanged = nextWatiEnabled !== profile.wati_enabled;
+  if (!employeeAccessChanged && !watiChanged) {
     return errorResponse("No changes supplied.");
   }
 
-  const { error } = await admin.rpc("admin_update_employee", {
-    p_employee_id: id,
-    p_team_id: nextTeamId,
-    p_active: nextActive,
-    p_actor_id: actor.id,
-  });
-  if (error) {
-    return errorResponse(
-      error.message.includes("one_active_team_lead")
-        ? "The selected team already has an active Team Lead."
-        : "Unable to update the employee.",
-      409,
-    );
+  if (employeeAccessChanged) {
+    const { error } = await admin.rpc("admin_update_employee", {
+      p_employee_id: id,
+      p_team_id: nextTeamId,
+      p_active: nextActive,
+      p_actor_id: actor.id,
+    });
+    if (error) {
+      return errorResponse(
+        error.message.includes("one_active_team_lead")
+          ? "The selected team already has an active Team Lead."
+          : "Unable to update the employee.",
+        409,
+      );
+    }
   }
 
-  if (nextTeamId !== profile.team_id && profile.team_id) {
+  if (watiChanged) {
+    const { error } = await admin.rpc("admin_set_employee_wati", {
+      p_employee_id: id,
+      p_enabled: nextWatiEnabled,
+      p_actor_id: actor.id,
+    });
+    if (error) {
+      return errorResponse("Unable to update WATI access for this employee.", 409);
+    }
+  }
+
+  if (employeeAccessChanged && nextTeamId !== profile.team_id && profile.team_id) {
     // The RPC publishes the new-team event. Publishing the previous team as
     // well lets that Team Lead remove the transferred employee immediately.
     await admin.from("activity_events").insert({
