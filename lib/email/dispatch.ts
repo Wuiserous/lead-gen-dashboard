@@ -2,10 +2,9 @@ import { randomUUID } from "node:crypto";
 import { resendConfigured, resendEnv } from "@/lib/env";
 import { createResend } from "@/lib/email/resend";
 import {
-  internalNewLeadEmail,
-  studentRegistrationEmail,
-  studentStatusEmail,
-  type EmailRegistration,
+  ambassadorMilestoneEmail,
+  ambassadorWelcomeEmail,
+  type EmailAmbassador,
   type EmailTemplate,
 } from "@/lib/email/templates";
 import { createAdminSupabase } from "@/lib/supabase/admin";
@@ -13,8 +12,9 @@ import { validEmail } from "@/lib/validation";
 
 type EmailJob = {
   id: string;
-  registration_id: string;
-  job_type: "student_registration" | "internal_new_lead" | "student_status";
+  registration_id: string | null;
+  ambassador_id: string | null;
+  job_type: "ambassador_welcome" | "ambassador_milestone";
   payload: Record<string, unknown>;
   dedupe_key: string;
   attempts: number;
@@ -25,78 +25,58 @@ function firstRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
 }
 
-function uniqueEmails(values: Array<string | null | undefined>) {
-  return [...new Set(
-    values
-      .map((value) => value?.trim().toLowerCase() ?? "")
-      .filter((value) => value && validEmail(value)),
-  )];
-}
-
 function errorText(error: unknown) {
   return (error instanceof Error ? error.message : "Unknown Resend error").slice(0, 2_000);
 }
 
-async function loadRegistration(job: EmailJob): Promise<EmailRegistration> {
+async function loadAmbassador(job: EmailJob): Promise<EmailAmbassador> {
+  if (!job.ambassador_id) throw new Error("The email job has no Campus Ambassador.");
   const admin = createAdminSupabase();
   const { data, error } = await admin
-    .from("registrations")
+    .from("ambassadors")
     .select(
-      "id,name,phone,email,preferred_domain,status,credited_sales_id,ambassador:ambassadors(name,college,public_slug)",
+      "id,name,email,phone,college,city,course_year,public_slug,progress_key,target,sales_id,progress:ambassador_progress(registration_count,qualified)",
     )
-    .eq("id", job.registration_id)
+    .eq("id", job.ambassador_id)
     .maybeSingle();
-  if (error || !data) throw new Error("The email job no longer has a registration.");
+  if (error || !data) throw new Error("The email job no longer has a Campus Ambassador.");
 
-  const registration = data as unknown as {
-    id: string;
-    name: string;
-    phone: string;
-    email: string | null;
-    preferred_domain: string;
-    status: string;
-    credited_sales_id: string;
-    ambassador: EmailRegistration["ambassador"] | EmailRegistration["ambassador"][];
+  const ambassador = data as unknown as Omit<EmailAmbassador, "employee" | "registration_count" | "qualified"> & {
+    sales_id: string;
+    progress: { registration_count: number; qualified: boolean } | Array<{ registration_count: number; qualified: boolean }> | null;
   };
+  const progress = firstRelation(ambassador.progress);
   const { data: employee, error: employeeError } = await admin
     .from("profiles")
-    .select("full_name,email")
-    .eq("id", registration.credited_sales_id)
+    .select("full_name")
+    .eq("id", ambassador.sales_id)
     .maybeSingle();
   if (employeeError) throw new Error("Unable to load the assigned employee.");
 
   return {
-    id: registration.id,
-    name: registration.name,
-    phone: registration.phone,
-    email: registration.email,
-    preferred_domain: registration.preferred_domain,
-    status: registration.status,
-    ambassador: firstRelation(registration.ambassador),
+    id: ambassador.id,
+    name: ambassador.name,
+    email: ambassador.email,
+    phone: ambassador.phone,
+    college: ambassador.college,
+    city: ambassador.city,
+    course_year: ambassador.course_year,
+    public_slug: ambassador.public_slug,
+    progress_key: ambassador.progress_key,
+    target: ambassador.target,
+    registration_count: progress?.registration_count ?? 0,
+    qualified: progress?.qualified ?? false,
     employee: employee ?? null,
   };
 }
 
-function prepareEmail(job: EmailJob, registration: EmailRegistration) {
-  const config = resendEnv();
-  let recipients: string[] = [];
-  let template: EmailTemplate;
-
-  if (job.job_type === "internal_new_lead") {
-    recipients = uniqueEmails([
-      registration.employee?.email,
-      ...config.adminRecipients,
-    ]);
-    template = internalNewLeadEmail(registration);
-  } else if (job.job_type === "student_status") {
-    recipients = uniqueEmails([registration.email]);
-    template = studentStatusEmail(registration, String(job.payload.status ?? "follow_up"));
-  } else {
-    recipients = uniqueEmails([registration.email]);
-    template = studentRegistrationEmail(registration);
+function prepareEmail(job: EmailJob, ambassador: EmailAmbassador): EmailTemplate {
+  if (job.job_type === "ambassador_milestone") {
+    const milestone = Number(job.payload.milestone) || ambassador.registration_count;
+    const count = Number(job.payload.registration_count) || ambassador.registration_count;
+    return ambassadorMilestoneEmail(ambassador, milestone, count);
   }
-
-  return { recipients, template };
+  return ambassadorWelcomeEmail(ambassador);
 }
 
 async function cancelJob(job: EmailJob, reason: string) {
@@ -106,6 +86,8 @@ async function cancelJob(job: EmailJob, reason: string) {
     .update({
       status: "cancelled",
       completed_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
       last_error: reason,
     })
     .eq("id", job.id);
@@ -137,13 +119,19 @@ async function processEmailJob(job: EmailJob) {
   const admin = createAdminSupabase();
   const config = resendEnv();
   if (!config.fromEmail) throw new Error("RESEND_FROM_EMAIL is not configured.");
-
-  const registration = await loadRegistration(job);
-  const { recipients, template } = prepareEmail(job, registration);
-  if (!recipients.length) {
-    await cancelJob(job, "No valid recipient email is available.");
+  if (!job.ambassador_id) {
+    await cancelJob(job, "Legacy non-CA email job is no longer active.");
     return "cancelled" as const;
   }
+
+  const ambassador = await loadAmbassador(job);
+  const recipient = ambassador.email?.trim().toLowerCase() ?? "";
+  if (!validEmail(recipient)) {
+    await cancelJob(job, "No valid Campus Ambassador email is available.");
+    return "cancelled" as const;
+  }
+  const template = prepareEmail(job, ambassador);
+  const recipients = [recipient];
 
   const { data: existing, error: existingError } = await admin
     .from("email_messages")
@@ -166,17 +154,13 @@ async function processEmailJob(job: EmailJob) {
   if (existing) {
     const { error } = await admin
       .from("email_messages")
-      .update({
-        recipients,
-        subject: template.subject,
-        status: "sending",
-        last_error: null,
-      })
+      .update({ recipients, subject: template.subject, status: "sending", last_error: null })
       .eq("id", existing.id);
     if (error) throw new Error("Unable to prepare the local email record.");
   } else {
     const { error } = await admin.from("email_messages").insert({
-      registration_id: job.registration_id,
+      registration_id: null,
+      ambassador_id: job.ambassador_id,
       job_id: job.id,
       message_type: job.job_type,
       recipients,

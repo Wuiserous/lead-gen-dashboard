@@ -1,5 +1,4 @@
-import { after, NextResponse } from "next/server";
-import { dispatchEmailJobs } from "@/lib/email/dispatch";
+import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { createAdminSupabase } from "@/lib/supabase/admin";
@@ -76,16 +75,6 @@ export async function PATCH(
     );
   }
   await Promise.all(sideEffects);
-
-  if (["contacted", "follow_up", "converted"].includes(status)) {
-    after(async () => {
-      try {
-        await dispatchEmailJobs({ limit: 10 });
-      } catch (dispatchError) {
-        console.error("Immediate status email dispatch failed", dispatchError);
-      }
-    });
-  }
 
   return NextResponse.json({ lead });
 }

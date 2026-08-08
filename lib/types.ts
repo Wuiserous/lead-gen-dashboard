@@ -39,6 +39,7 @@ export type AmbassadorPerformance = {
   sales_id: string;
   team_id: string;
   name: string;
+  email: string | null;
   phone: string;
   college: string;
   city: string;
@@ -114,7 +115,6 @@ export type Registration = {
   credited_team_id: string;
   name: string;
   phone: string;
-  email: string | null;
   preferred_domain: string;
   status: RegistrationStatus;
   note: string;

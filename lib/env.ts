@@ -68,10 +68,6 @@ export function resendEnv() {
     fromEmail: optional(process.env.RESEND_FROM_EMAIL),
     replyTo: optional(process.env.RESEND_REPLY_TO),
     webhookSecret: optional(process.env.RESEND_WEBHOOK_SECRET),
-    adminRecipients: (process.env.EMAIL_ADMIN_RECIPIENTS ?? "")
-      .split(",")
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean),
   };
 }
 

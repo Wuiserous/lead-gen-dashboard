@@ -2430,7 +2430,10 @@ function AmbassadorsView({
                 View registrations from this group <ChevronRight size={16} />
               </button>
               <div className="ambassador-footer">
-                <span>{ambassador.phone}</span>
+                <span className="ambassador-contact">
+                  {ambassador.phone}
+                  {ambassador.email && <small>{ambassador.email}</small>}
+                </span>
                 <div>
                   <button
                     className="icon-button"
@@ -2732,7 +2735,6 @@ function LeadRow({
         <div>
           <strong>{lead.name}</strong>
           <small>{lead.phone}</small>
-          {lead.email && <small>{lead.email}</small>}
         </div>
       </div>
       <span>{ambassadorLabel(lead)}</span>
@@ -3223,7 +3225,7 @@ function AmbassadorForm({
   onFailed: (ambassador: AmbassadorPerformance, message: string) => void;
 }) {
   const [form, setForm] = useState({
-    name: "", phone: "", college: "", city: "", courseYear: "",
+    name: "", email: "", phone: "", college: "", city: "", courseYear: "",
   });
 
   async function submit(event: React.FormEvent) {
@@ -3234,6 +3236,7 @@ function AmbassadorForm({
       sales_id: user.id,
       team_id: user.team_id ?? "",
       name: form.name.trim(),
+      email: form.email.trim(),
       phone: form.phone.trim(),
       college: form.college.trim(),
       city: form.city.trim(),
@@ -3286,6 +3289,7 @@ function AmbassadorForm({
       <p className="muted">Each Campus Ambassador is one group. Referral and private progress links are generated automatically.</p>
       <form className="stack-form two-column" onSubmit={submit}>
         <label>Full name<input className="plain-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
+        <label>Email address<input className="plain-input" type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
         <label>Mobile number<input className="plain-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required /></label>
         <label className="full-span">College<input className="plain-input" value={form.college} onChange={(e) => setForm({ ...form, college: e.target.value })} required /></label>
         <label>City<input className="plain-input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></label>

@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { dispatchEmailJobs } from "@/lib/email/dispatch";
 import { requireApiProfile } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { createAdminSupabase } from "@/lib/supabase/admin";
@@ -6,6 +7,7 @@ import {
   cleanText,
   createSlug,
   normalizeIndianPhone,
+  validEmail,
 } from "@/lib/validation";
 
 export async function POST(request: Request) {
@@ -16,13 +18,14 @@ export async function POST(request: Request) {
 
   const body = await request.json();
   const name = cleanText(body.name, 100);
+  const email = cleanText(body.email, 254).toLowerCase();
   const phone = normalizeIndianPhone(body.phone);
   const college = cleanText(body.college, 150);
   const city = cleanText(body.city, 100);
   const courseYear = cleanText(body.courseYear, 120);
-  if (name.length < 2 || !phone || college.length < 2) {
+  if (name.length < 2 || !validEmail(email) || !phone || college.length < 2) {
     return errorResponse(
-      "Name, valid Indian phone number, and college are required.",
+      "Name, valid email, valid Indian phone number, and college are required.",
     );
   }
 
@@ -40,6 +43,7 @@ export async function POST(request: Request) {
       sales_id: user.id,
       team_id: user.team_id,
       name,
+      email,
       phone,
       college,
       city,
@@ -61,6 +65,14 @@ export async function POST(request: Request) {
     sales_id: user.id,
     ambassador_id: data.id,
     entity_id: data.id,
+  });
+
+  after(async () => {
+    try {
+      await dispatchEmailJobs({ limit: 10 });
+    } catch (dispatchError) {
+      console.error("Immediate CA welcome email dispatch failed", dispatchError);
+    }
   });
 
   return NextResponse.json({ ambassador: data }, { status: 201 });

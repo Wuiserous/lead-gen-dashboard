@@ -3021,6 +3021,17 @@ p {
   gap: 6px;
 }
 
+.ambassador-contact {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ambassador-contact small {
+  overflow-wrap: anywhere;
+  font-size: 0.67rem;
+}
+
 .ambassador-footer .icon-button {
   width: 34px;
   height: 34px;
@@ -5308,18 +5319,6 @@ p {
   overflow-wrap: anywhere;
   color: var(--navy);
   font-size: 0.76rem;
-}
-
-.phone-confirmation-email {
-  grid-column: 1 / -1;
-}
-
-.optional-field {
-  justify-self: start;
-  color: #7b8799;
-  font-size: 0.62rem;
-  font-weight: 750;
-  text-transform: uppercase;
 }
 
 .phone-confirmation-edit {

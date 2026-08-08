@@ -7,7 +7,6 @@ import { internshipDomains } from "@/lib/domains";
 export type RegisteredStudentDetails = {
   name: string;
   phone: string;
-  email: string;
   domain: string;
 };
 
@@ -40,7 +39,6 @@ export function StudentRegistrationForm({
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
   const [website, setWebsite] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -65,7 +63,7 @@ export function StudentRegistrationForm({
       const response = await fetch("/api/public/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug, name, phone, email, domain, website }),
+        body: JSON.stringify({ slug, name, phone, domain, website }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -77,7 +75,7 @@ export function StudentRegistrationForm({
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-      onRegistered({ name: name.trim(), phone, email: email.trim(), domain });
+      onRegistered({ name: name.trim(), phone, domain });
     } catch {
       setError("Unable to register. Check your connection and try again.");
     } finally {
@@ -110,11 +108,6 @@ export function StudentRegistrationForm({
         <div className="phone-confirmation-details">
           <span><small>Name</small><strong>{name.trim()}</strong></span>
           <span><small>Domain</small><strong>{domain}</strong></span>
-          {email.trim() && (
-            <span className="phone-confirmation-email">
-              <small>Email</small><strong>{email.trim()}</strong>
-            </span>
-          )}
         </div>
         {error && <div className="alert error">{error}</div>}
         <button className="gold-button wide" type="submit" disabled={loading}>
@@ -190,19 +183,6 @@ export function StudentRegistrationForm({
           />
         </span>
       </label>
-      <label>
-        Email address <small className="optional-field">Optional</small>
-        <input
-          name="email"
-          type="email"
-          inputMode="email"
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value.slice(0, 254))}
-          placeholder="For confirmation and updates"
-          maxLength={254}
-        />
-      </label>
       <label className="honeypot" aria-hidden="true">
         Website
         <input
@@ -216,8 +196,8 @@ export function StudentRegistrationForm({
       {error && <div className="alert error">{error}</div>}
       <p className="whatsapp-opt-in-note">
         By registering, you agree to receive internship details, application
-        updates and counsellor assistance from Persevex on WhatsApp and, if
-        provided, email. Reply STOP on WhatsApp anytime to unsubscribe there.
+        updates and counsellor assistance from Persevex on WhatsApp. Reply STOP
+        anytime to unsubscribe.
       </p>
       <button className="gold-button wide" type="submit">
         Review my number

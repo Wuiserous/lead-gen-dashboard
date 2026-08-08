@@ -52,9 +52,8 @@ variables:
 - `WATI_FINAL_REMINDER_TEMPLATE` (defaults to `persevex_lead_final_reminder_v1`)
 - `RESEND_API_KEY` (server-side Resend API key)
 - `RESEND_FROM_EMAIL` (for example `Persevex <support@persevex.com>`)
-- `RESEND_REPLY_TO` (the monitored inbox for student replies)
+- `RESEND_REPLY_TO` (the monitored inbox for Campus Ambassador replies)
 - `RESEND_WEBHOOK_SECRET` (the `whsec_...` signing secret for the production webhook)
-- `EMAIL_ADMIN_RECIPIENTS` (optional comma-separated internal alert recipients)
 - `CRON_SECRET` (a separate long random secret)
 
 `DATABASE_URL`, `SUPABASE_PROJECT_REF`, and `SUPABASE_POOLER_HOST` are only
@@ -71,13 +70,14 @@ Postgres connections.
    `email.failed`, `email.bounced`, `email.complained`, `email.suppressed`,
    `email.opened`, and `email.clicked`.
 4. Copy its signing secret to `RESEND_WEBHOOK_SECRET` in Vercel and redeploy.
-5. Apply migration `0011_resend_email_engine.sql` before deploying the code.
+5. Apply migrations `0011_resend_email_engine.sql` and
+   `0012_ca_milestone_email.sql` before deploying the code.
 
-Student email is optional. When provided, registration acknowledgement and
-important status updates are queued durably. Every new lead also queues an
-internal notification to its assigned employee plus the optional
-`EMAIL_ADMIN_RECIPIENTS`. The existing protected communications cron processes
-both WhatsApp and Resend retries.
+Campus Ambassador email is required for every new group. Resend sends the CA a
+branded welcome email with their referral draft, then milestone emails at 1, 5,
+10, 20, and the qualification target (30 by default). Student and internal lead
+emails are disabled in this phase. The existing protected communications cron
+processes both WhatsApp and Resend retries.
 
 In Supabase Authentication URL settings, set the Site URL to the production
 domain and add the same domain to Redirect URLs.

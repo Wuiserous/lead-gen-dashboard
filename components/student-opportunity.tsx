@@ -476,9 +476,6 @@ export function StudentOpportunity({
               <dl className="registration-summary">
                 <div><dt>Name</dt><dd>{registrationDetails.name}</dd></div>
                 <div><dt>Mobile</dt><dd>+91 {registrationDetails.phone}</dd></div>
-                {registrationDetails.email && (
-                  <div><dt>Email</dt><dd>{registrationDetails.email}</dd></div>
-                )}
                 <div><dt>Internship domain</dt><dd>{registrationDetails.domain}</dd></div>
               </dl>
             )}

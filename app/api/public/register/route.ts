@@ -8,7 +8,6 @@ import {
   cleanText,
   normalizeIndianPhone,
   secureHash,
-  validEmail,
 } from "@/lib/validation";
 import { dispatchWhatsAppJobs } from "@/lib/whatsapp/dispatch";
 
@@ -19,15 +18,11 @@ export async function POST(request: Request) {
   const slug = cleanText(body.slug, 100);
   const name = cleanText(body.name, 100);
   const phone = normalizeIndianPhone(body.phone);
-  const email = cleanText(body.email, 254).toLowerCase();
   const domain = cleanText(body.domain, 100);
   if (!slug || name.length < 2 || !phone || !isInternshipDomain(domain)) {
     return errorResponse(
       "Enter your full name, a valid Indian mobile number, and select an internship domain.",
     );
-  }
-  if (email && !validEmail(email)) {
-    return errorResponse("Enter a valid email address or leave it blank.");
   }
 
   const forwarded = request.headers.get("x-forwarded-for") ?? "";
@@ -62,7 +57,7 @@ export async function POST(request: Request) {
     p_slug: slug,
     p_name: name,
     p_phone: phone,
-    p_email: email,
+    p_email: "",
     p_domain: domain,
     p_ip_hash: ipHash,
     p_phone_hash: phoneHash,
@@ -85,53 +80,35 @@ export async function POST(request: Request) {
     if (error.message.includes("INVITATION_UNAVAILABLE")) {
       return errorResponse("This invitation is no longer active.", 404);
     }
-    if (error.message.includes("INVALID_EMAIL")) {
-      return errorResponse("Enter a valid email address or leave it blank.");
-    }
     return errorResponse("Unable to complete registration right now.", 500);
   }
 
-  const [whatsappJob, emailJob] = await Promise.all([
-    admin
-      .from("whatsapp_jobs")
-      .select("id")
-      .eq("registration_id", data)
-      .eq("status", "pending")
-      .limit(1)
-      .maybeSingle(),
-    admin
-      .from("email_jobs")
-      .select("id")
-      .eq("registration_id", data)
-      .eq("status", "pending")
-      .limit(1)
-      .maybeSingle(),
-  ]);
-  const whatsappQueued = Boolean(whatsappJob.data);
-  const emailQueued = Boolean(emailJob.data);
+  const { data: queuedJob } = await admin
+    .from("whatsapp_jobs")
+    .select("id")
+    .eq("registration_id", data)
+    .eq("status", "pending")
+    .limit(1)
+    .maybeSingle();
+  const whatsappQueued = Boolean(queuedJob);
 
-  if (whatsappQueued || emailQueued) {
-    after(async () => {
-      const results = await Promise.allSettled([
-        whatsappQueued
-          ? dispatchWhatsAppJobs({ limit: 10 })
-          : Promise.resolve(null),
-        emailQueued
-          ? dispatchEmailJobs({ limit: 10 })
-          : Promise.resolve(null),
-      ]);
-      for (const result of results) {
-        if (result.status === "rejected") {
-          console.error("Immediate communications dispatch failed", result.reason);
-        }
+  after(async () => {
+    const results = await Promise.allSettled([
+      whatsappQueued
+        ? dispatchWhatsAppJobs({ limit: 10 })
+        : Promise.resolve(null),
+      dispatchEmailJobs({ limit: 10 }),
+    ]);
+    for (const result of results) {
+      if (result.status === "rejected") {
+        console.error("Immediate communications dispatch failed", result.reason);
       }
-    });
-  }
+    }
+  });
 
   return NextResponse.json({
     registered: true,
     registrationId: data,
     whatsappQueued,
-    emailQueued,
   });
 }
