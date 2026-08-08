@@ -25,6 +25,7 @@ const statusLabels: Record<RegistrationStatus, string> = {
 const csvFields = [
   "Student Name",
   "Mobile Number",
+  "Email Address",
   "Preferred Domain",
   "Status",
   "Follow-up Note",
@@ -50,6 +51,7 @@ type ExportRegistration = {
   credited_team_id: string;
   name: string;
   phone: string;
+  email: string | null;
   preferred_domain: string;
   status: RegistrationStatus;
   note: string;
@@ -146,7 +148,7 @@ export async function GET(request: Request) {
     let query = admin
       .from("registrations")
       .select(
-        "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at",
+        "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,email,preferred_domain,status,note,created_at,updated_at,anonymized_at",
       )
       .order("created_at", { ascending: false });
 
@@ -208,6 +210,7 @@ export async function GET(request: Request) {
     return {
       "Student Name": registration.name,
       "Mobile Number": registration.phone,
+      "Email Address": registration.email ?? "",
       "Preferred Domain": registration.preferred_domain,
       Status: statusLabels[registration.status],
       "Follow-up Note": registration.note,

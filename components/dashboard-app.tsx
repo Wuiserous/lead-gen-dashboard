@@ -2729,7 +2729,11 @@ function LeadRow({
     <div className={`data-row lead-grid ${whatsappAccess ? "" : "no-whatsapp"}`}>
       <div className="identity-cell">
         <span className="avatar">{lead.name[0]}</span>
-        <div><strong>{lead.name}</strong><small>{lead.phone}</small></div>
+        <div>
+          <strong>{lead.name}</strong>
+          <small>{lead.phone}</small>
+          {lead.email && <small>{lead.email}</small>}
+        </div>
       </div>
       <span>{ambassadorLabel(lead)}</span>
       <span className="domain-tag">{lead.preferred_domain}</span>

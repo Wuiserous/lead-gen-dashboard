@@ -71,8 +71,8 @@ export async function GET(request: Request) {
     ? "id,full_name,email,phone,role,team_id,active,wati_enabled,created_at"
     : "id,full_name,email,phone,role,team_id,active,created_at";
   const registrationSelect = user.role === "admin" || user.role === "sales"
-    ? "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
-    : "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)";
+    ? "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,email,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
+    : "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,email,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)";
   after(async () => {
     await admin.rpc("anonymize_expired_registrations");
   });

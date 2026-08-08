@@ -80,10 +80,34 @@ const certificateTypes = [
 ] as const;
 
 const complianceCredentials = [
-  { id: "iso", title: "ISO Certification", detail: "Quality management system" },
-  { id: "msme", title: "MSME Certificate", detail: "Registered enterprise" },
-  { id: "gst", title: "GST Registration", detail: "Government tax registration" },
-  { id: "startup", title: "Startup India Recognition", detail: "DPIIT recognised startup" },
+  {
+    id: "iso",
+    title: "ISO 9001:2015 Certification",
+    detail: "Quality management system",
+    image: "/compliance/iso-9001-certification.webp",
+    alt: "First page of Persevex ISO 9001:2015 certificate",
+  },
+  {
+    id: "msme",
+    title: "MSME Udyam Registration",
+    detail: "Government registered micro enterprise",
+    image: "/compliance/msme-udyam-registration.webp",
+    alt: "First page of Persevex MSME Udyam registration certificate",
+  },
+  {
+    id: "gst",
+    title: "GST Registration",
+    detail: "Government tax registration",
+    image: "/compliance/gst-registration.webp",
+    alt: "First page of Persevex GST registration certificate",
+  },
+  {
+    id: "startup",
+    title: "Startup India Recognition",
+    detail: "DPIIT recognised startup",
+    image: "/compliance/startup-india-recognition.webp",
+    alt: "Persevex Startup India certificate of recognition",
+  },
 ] as const;
 
 function CertificatePreview() {
@@ -176,26 +200,6 @@ function CertificatePreview() {
   );
 }
 
-function ComplianceLogo({ id }: { id: (typeof complianceCredentials)[number]["id"] }) {
-  if (id === "iso") {
-    return <span className="compliance-logo compliance-logo-iso"><b>ISO</b><small>9001:2015</small></span>;
-  }
-
-  if (id === "msme") {
-    return (
-      <span className="compliance-logo compliance-logo-msme">
-        <i aria-hidden="true"><b /><b /><b /></i><strong>MSME</strong>
-      </span>
-    );
-  }
-
-  if (id === "gst") {
-    return <span className="compliance-logo compliance-logo-gst"><i>INDIA</i><b>GST</b></span>;
-  }
-
-  return <span className="compliance-logo compliance-logo-startup"><b>#startup</b><strong>india</strong></span>;
-}
-
 function ComplianceCarousel() {
   return (
     <section className="compliance-section" aria-labelledby="compliance-title">
@@ -209,7 +213,16 @@ function ComplianceCarousel() {
             <div className="compliance-set" key={copyIndex} aria-hidden={copyIndex === 1}>
               {complianceCredentials.map((credential) => (
                 <article className={`compliance-card compliance-card-${credential.id}`} key={credential.id}>
-                  <ComplianceLogo id={credential.id} />
+                  <div className="compliance-document-frame" aria-hidden={copyIndex === 1}>
+                    <Image
+                      src={credential.image}
+                      alt={copyIndex === 0 ? credential.alt : ""}
+                      fill
+                      sizes="(max-width: 640px) 300px, 410px"
+                      draggable={false}
+                    />
+                    <span>Page 1 preview</span>
+                  </div>
                   <span><strong>{credential.title}</strong><small>{credential.detail}</small></span>
                 </article>
               ))}
@@ -463,6 +476,9 @@ export function StudentOpportunity({
               <dl className="registration-summary">
                 <div><dt>Name</dt><dd>{registrationDetails.name}</dd></div>
                 <div><dt>Mobile</dt><dd>+91 {registrationDetails.phone}</dd></div>
+                {registrationDetails.email && (
+                  <div><dt>Email</dt><dd>{registrationDetails.email}</dd></div>
+                )}
                 <div><dt>Internship domain</dt><dd>{registrationDetails.domain}</dd></div>
               </dl>
             )}

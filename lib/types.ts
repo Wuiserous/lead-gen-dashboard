@@ -114,6 +114,7 @@ export type Registration = {
   credited_team_id: string;
   name: string;
   phone: string;
+  email: string | null;
   preferred_domain: string;
   status: RegistrationStatus;
   note: string;

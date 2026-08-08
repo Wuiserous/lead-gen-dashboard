@@ -61,3 +61,21 @@ export function watiConfigured() {
 export function cronSecret() {
   return optional(process.env.CRON_SECRET);
 }
+
+export function resendEnv() {
+  return {
+    apiKey: optional(process.env.RESEND_API_KEY),
+    fromEmail: optional(process.env.RESEND_FROM_EMAIL),
+    replyTo: optional(process.env.RESEND_REPLY_TO),
+    webhookSecret: optional(process.env.RESEND_WEBHOOK_SECRET),
+    adminRecipients: (process.env.EMAIL_ADMIN_RECIPIENTS ?? "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  };
+}
+
+export function resendConfigured() {
+  const config = resendEnv();
+  return Boolean(config.apiKey && config.fromEmail);
+}
