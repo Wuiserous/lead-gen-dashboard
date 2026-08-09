@@ -100,7 +100,6 @@ async function processWebhook(
   payload: WatiWebhook,
   rawBody: string,
 ): Promise<WebhookProcessResult> {
-  const nativeChatbotEnabled = watiEnv().nativeChatbotEnabled;
   const admin = createAdminSupabase();
   const eventType = stringValue(payload.eventType || payload.event_type || "unknown");
   const dedupeKey = webhookDedupeKey(payload, rawBody);
@@ -167,7 +166,7 @@ async function processWebhook(
     const body = replyText(payload);
     const messageType = stringValue(payload.type || "text").toLowerCase();
     const now = new Date();
-    const { data: message, error: messageError } = await admin
+    const { error: messageError } = await admin
       .from("whatsapp_messages")
       .insert({
         conversation_id: conversation.id,
@@ -178,9 +177,7 @@ async function processWebhook(
         whatsapp_message_id: whatsappMessageId,
         status: "received",
         sent_at: now.toISOString(),
-      })
-      .select("id")
-      .single();
+      });
     if (messageError) throw new Error("Unable to store the incoming WhatsApp message.");
 
     const updatedConversation = {
@@ -215,26 +212,10 @@ async function processWebhook(
       })
       .eq("id", conversation.id);
 
-    if (employeeWatiEnabled && !nativeChatbotEnabled) {
-      const { data: immediateJob, error: immediateJobError } = await admin
-        .from("whatsapp_jobs")
-        .upsert(
-        {
-          conversation_id: conversation.id,
-          registration_id: conversation.registration_id,
-          job_type: "process_inbound",
-          payload: { message_id: message.id },
-          dedupe_key: `inbound:${message.id}`,
-        },
-        { onConflict: "dedupe_key", ignoreDuplicates: true },
-        )
-        .select("id")
-        .maybeSingle();
-      if (immediateJobError) {
-        throw new Error("Unable to queue the incoming WhatsApp reply.");
-      }
-      immediateJobId = immediateJob?.id;
-    } else if (!employeeWatiEnabled) {
+    // WATI's native chatbot is the sole automatic inbound responder. The app
+    // stores inbound messages and updates dashboards, but must never enqueue a
+    // second reply for the same student action.
+    if (!employeeWatiEnabled) {
       await admin
         .from("whatsapp_conversations")
         .update({ bot_paused: true })

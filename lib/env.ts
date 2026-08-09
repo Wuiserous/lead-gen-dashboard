@@ -43,8 +43,6 @@ export function watiEnv() {
     channel: optional(process.env.WATI_CHANNEL),
     apiVersion: optional(process.env.WATI_API_VERSION) === "v3" ? "v3" : "v1",
     webhookSecret: optional(process.env.WATI_WEBHOOK_SECRET),
-    nativeChatbotEnabled:
-      optional(process.env.WATI_NATIVE_CHATBOT_ENABLED)?.toLowerCase() === "true",
     welcomeTemplate:
       optional(process.env.WATI_WELCOME_TEMPLATE) ?? "persevex_lead_welcome_v1",
     reminderTemplate:

@@ -2,13 +2,6 @@ import { randomUUID } from "node:crypto";
 import { watiConfigured, watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import {
-  nextWhatsAppFlow,
-  type FlowMessage,
-  type FlowResult,
-} from "@/lib/whatsapp/flow";
-import {
-  sendWatiButtons,
-  sendWatiList,
   sendWatiTemplate,
   sendWatiText,
   WatiApiError,
@@ -105,27 +98,6 @@ async function loadJobContext(job: WhatsAppJob) {
     registration: registrationResult.data as unknown as RegistrationContext,
     employeeWatiEnabled: Boolean(employee.active && employee.wati_enabled),
   };
-}
-
-async function notifyDashboard(conversation: Conversation, eventType = "registration_whatsapp_updated") {
-  const admin = createAdminSupabase();
-  await admin.from("activity_events").insert({
-    event_type: eventType,
-    team_id: conversation.team_id,
-    sales_id: conversation.assigned_sales_id,
-    ambassador_id: conversation.ambassador_id,
-    entity_id: conversation.registration_id,
-  });
-}
-
-async function cancelPendingJobs(conversationId: string, exceptJobId: string) {
-  const admin = createAdminSupabase();
-  await admin
-    .from("whatsapp_jobs")
-    .update({ status: "cancelled", completed_at: new Date().toISOString() })
-    .eq("conversation_id", conversationId)
-    .eq("status", "pending")
-    .neq("id", exceptJobId);
 }
 
 async function createOutboundMessage(
@@ -309,138 +281,6 @@ async function sendTemplateJob(
   }
 }
 
-function flowMessageBody(message: FlowMessage) {
-  if (message.kind === "text") return message.body;
-  if (message.kind === "buttons") return `${message.body}\n[${message.buttons.join(" | ")}]`;
-  return `${message.body}\n[${message.rows.map((row) => row.title).join(" | ")}]`;
-}
-
-async function sendFlowMessage(
-  job: WhatsAppJob,
-  conversation: Conversation,
-  registration: RegistrationContext,
-  message: FlowMessage,
-) {
-  const prepared = await createOutboundMessage(job, {
-    body: flowMessageBody(message),
-    messageType: message.kind,
-    intent: "flow_reply",
-  });
-  if (prepared.alreadyAttempted) return;
-
-  let result: SendResult;
-  if (message.kind === "buttons") {
-    result = await sendWatiButtons({
-      target: registration.phone,
-      header: message.header,
-      body: message.body,
-      buttons: message.buttons,
-    });
-  } else if (message.kind === "list") {
-    result = await sendWatiList({
-      target: registration.phone,
-      header: message.header,
-      body: message.body,
-      buttonText: message.buttonText,
-      sectionTitle: message.sectionTitle,
-      rows: message.rows,
-    });
-  } else {
-    result = await sendWatiText(registration.phone, message.body);
-  }
-  await markMessageSent(prepared.id, conversation, result);
-}
-
-async function processInboundJob(
-  job: WhatsAppJob,
-  conversation: Conversation,
-  registration: RegistrationContext,
-) {
-  const admin = createAdminSupabase();
-  const messageId = String(job.payload.message_id ?? "");
-  const { data: inbound, error } = await admin
-    .from("whatsapp_messages")
-    .select("id,body,message_type")
-    .eq("id", messageId)
-    .maybeSingle();
-  if (error || !inbound) throw new Error("The incoming WhatsApp message is unavailable.");
-
-  await admin
-    .from("whatsapp_jobs")
-    .update({ status: "cancelled", completed_at: new Date().toISOString() })
-    .eq("conversation_id", conversation.id)
-    .eq("job_type", "send_template")
-    .eq("status", "pending");
-
-  const normalizedBody = String(inbound.body ?? "").trim().toLowerCase();
-  const isRestart = ["start", "menu", "hi", "hello"].includes(normalizedBody);
-  const isStop = ["stop", "unsubscribe", "remove me", "don't message", "dont message"].includes(normalizedBody);
-  if (conversation.bot_paused && !isRestart && !isStop) {
-    await notifyDashboard(conversation);
-    return;
-  }
-
-  const supportedType = ["text", "button", "interactive", "list"].includes(inbound.message_type);
-  if (!supportedType) {
-    await admin
-      .from("whatsapp_conversations")
-      .update({
-        state: "advisor_requested",
-        flow_step: "awaiting_human",
-        bot_paused: true,
-        urgency: "high",
-      })
-      .eq("id", conversation.id);
-    await notifyDashboard(conversation);
-    return;
-  }
-
-  let flow = job.payload.flow_result as FlowResult | undefined;
-  if (!flow) {
-    flow = nextWhatsAppFlow(
-      {
-        conversation,
-        name: registration.name,
-        domain: registration.preferred_domain,
-      },
-      inbound.body,
-    );
-    await admin
-      .from("whatsapp_jobs")
-      .update({ payload: { ...job.payload, flow_result: flow } })
-      .eq("id", job.id);
-  }
-
-  const conversationUpdates = {
-    ...flow.updates,
-    last_error: null,
-  };
-  await admin
-    .from("whatsapp_conversations")
-    .update(conversationUpdates)
-    .eq("id", conversation.id);
-
-  if (flow.cancelPending) await cancelPendingJobs(conversation.id, job.id);
-  await sendFlowMessage(job, { ...conversation, ...conversationUpdates }, registration, flow.message);
-
-  const followUpAt = flow.updates.follow_up_at;
-  if (typeof followUpAt === "string") {
-    await admin.from("whatsapp_jobs").upsert(
-      {
-        conversation_id: conversation.id,
-        registration_id: registration.id,
-        job_type: "send_template",
-        payload: { template_key: "reminder" },
-        dedupe_key: `requested-follow-up:${conversation.id}:${followUpAt}`,
-        scheduled_for: followUpAt,
-      },
-      { onConflict: "dedupe_key", ignoreDuplicates: true },
-    );
-  }
-
-  await notifyDashboard({ ...conversation, ...conversationUpdates });
-}
-
 async function sendManualTextJob(
   job: WhatsAppJob,
   conversation: Conversation,
@@ -476,7 +316,10 @@ async function executeJob(job: WhatsAppJob) {
   if (job.job_type === "send_template") {
     await sendTemplateJob(job, conversation, registration);
   } else if (job.job_type === "process_inbound") {
-    await processInboundJob(job, conversation, registration);
+    // Automatic inbound replies are owned by WATI's native chatbot. Keeping
+    // this no-op also drains any process_inbound jobs queued before cutover
+    // without sending duplicate WhatsApp messages.
+    return;
   } else if (job.job_type === "manual_text") {
     await sendManualTextJob(job, conversation, registration);
   } else {
