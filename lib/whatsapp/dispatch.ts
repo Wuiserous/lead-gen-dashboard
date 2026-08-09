@@ -555,3 +555,39 @@ export async function dispatchWhatsAppJobs(options?: { limit?: number }) {
 
   return { configured: true, claimed: jobs.length, completed, failed };
 }
+
+export async function dispatchWhatsAppJob(jobId: string) {
+  if (!watiConfigured()) {
+    return { configured: false, claimed: 0, completed: 0, failed: 0 };
+  }
+
+  const admin = createAdminSupabase();
+  const workerId = `immediate:${randomUUID()}`;
+  const { data, error } = await admin
+    .from("whatsapp_jobs")
+    .update({
+      status: "processing",
+      locked_at: new Date().toISOString(),
+      locked_by: workerId,
+    })
+    .eq("id", jobId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw new Error("Unable to claim the immediate WhatsApp job.");
+  if (!data) {
+    // Another worker already claimed or completed this job.
+    return { configured: true, claimed: 0, completed: 0, failed: 0 };
+  }
+
+  const job = data as WhatsAppJob;
+  try {
+    await executeJob(job);
+    await completeJob(job);
+    return { configured: true, claimed: 1, completed: 1, failed: 0 };
+  } catch (jobError) {
+    await failJob(job, jobError);
+    return { configured: true, claimed: 1, completed: 0, failed: 1 };
+  }
+}

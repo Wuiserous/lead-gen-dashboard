@@ -99,7 +99,7 @@ function advisorResult(): FlowResult {
   return {
     message: {
       kind: "text",
-      body: "Soon our executive will contact you.",
+      body: "Thanks! 😃 Our Executive will soon contact you.",
     },
     updates: {
       state: "advisor_requested",
@@ -252,11 +252,14 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
 
   if (reply === "build skills" || reply === "certificates" || reply === "stipend details") {
     const primaryGoal = reply === "build skills" ? "skills" : reply === "certificates" ? "certificates" : "stipend";
+    const stipendDetails = primaryGoal === "stipend"
+      ? "Up to ₹18K–₹25K stipend based on performance.\n\n"
+      : "";
     return {
       message: {
         kind: "buttons",
         header: `${context.domain} path`,
-        body: `Based on your interests, ${context.name}, this ${context.domain} path includes:\n\n✓ Structured training\n✓ Guided Internship\n✓ Real World Projects\n✓ Live sessions and recordings\n✓ Mentor support\n\nWould you like to talk to our executive?`,
+        body: `${stipendDetails}Based on your interests, ${context.name}, this ${context.domain} path includes:\n\n✓ Structured training\n✓ Guaranteed Internship\n✓ Real World Projects\n✓ Live sessions and recordings\n✓ Mentor support\n\nWould you like to talk to our executive?`,
         buttons: ["Talk to advisor", "View FAQs"],
       },
       updates: {

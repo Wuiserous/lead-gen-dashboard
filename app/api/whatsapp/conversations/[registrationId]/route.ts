@@ -4,7 +4,7 @@ import { requireApiProfile } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { cleanText } from "@/lib/validation";
-import { dispatchWhatsAppJobs } from "@/lib/whatsapp/dispatch";
+import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
 
 export const dynamic = "force-dynamic";
 
@@ -165,13 +165,17 @@ export async function POST(
 
   const admin = createAdminSupabase();
   const dedupeKey = `manual:${registrationId}:${randomUUID()}`;
-  const { error } = await admin.from("whatsapp_jobs").insert({
-    conversation_id: scoped.conversation.id,
-    registration_id: registrationId,
-    job_type: "manual_text",
-    payload: { message, actor_id: scoped.user.id },
-    dedupe_key: dedupeKey,
-  });
+  const { data: queuedJob, error } = await admin
+    .from("whatsapp_jobs")
+    .insert({
+      conversation_id: scoped.conversation.id,
+      registration_id: registrationId,
+      job_type: "manual_text",
+      payload: { message, actor_id: scoped.user.id },
+      dedupe_key: dedupeKey,
+    })
+    .select("id")
+    .single();
   if (error) return errorResponse("Unable to queue the WhatsApp message.", 500);
 
   await admin
@@ -187,7 +191,7 @@ export async function POST(
 
   after(async () => {
     try {
-      await dispatchWhatsAppJobs({ limit: 10 });
+      await dispatchWhatsAppJob(queuedJob.id);
     } catch (dispatchError) {
       console.error("Manual WhatsApp dispatch failed", dispatchError);
     }

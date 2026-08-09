@@ -2,11 +2,17 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { after, NextResponse } from "next/server";
 import { watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
-import { dispatchWhatsAppJobs } from "@/lib/whatsapp/dispatch";
+import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
 
 export const dynamic = "force-dynamic";
 
 type WatiWebhook = Record<string, unknown>;
+type WebhookProcessResult = {
+  duplicate?: boolean;
+  ignored?: boolean;
+  processed?: boolean;
+  immediateJobId?: string;
+};
 
 function safeEqual(left: string, right: string) {
   const leftDigest = createHash("sha256").update(left).digest();
@@ -89,7 +95,10 @@ async function recordActivity(conversation: Record<string, unknown>) {
   });
 }
 
-async function processWebhook(payload: WatiWebhook, rawBody: string) {
+async function processWebhook(
+  payload: WatiWebhook,
+  rawBody: string,
+): Promise<WebhookProcessResult> {
   const admin = createAdminSupabase();
   const eventType = stringValue(payload.eventType || payload.event_type || "unknown");
   const dedupeKey = webhookDedupeKey(payload, rawBody);
@@ -135,6 +144,7 @@ async function processWebhook(payload: WatiWebhook, rawBody: string) {
     assignedEmployee?.active && assignedEmployee?.wati_enabled,
   );
 
+  let immediateJobId: string | undefined;
   if (incomingEvent(payload)) {
     const whatsappMessageId = stringValue(payload.whatsappMessageId) || null;
     if (whatsappMessageId) {
@@ -204,7 +214,9 @@ async function processWebhook(payload: WatiWebhook, rawBody: string) {
       .eq("id", conversation.id);
 
     if (employeeWatiEnabled) {
-      await admin.from("whatsapp_jobs").upsert(
+      const { data: immediateJob, error: immediateJobError } = await admin
+        .from("whatsapp_jobs")
+        .upsert(
         {
           conversation_id: conversation.id,
           registration_id: conversation.registration_id,
@@ -213,7 +225,13 @@ async function processWebhook(payload: WatiWebhook, rawBody: string) {
           dedupe_key: `inbound:${message.id}`,
         },
         { onConflict: "dedupe_key", ignoreDuplicates: true },
-      );
+        )
+        .select("id")
+        .maybeSingle();
+      if (immediateJobError) {
+        throw new Error("Unable to queue the incoming WhatsApp reply.");
+      }
+      immediateJobId = immediateJob?.id;
     } else {
       await admin
         .from("whatsapp_conversations")
@@ -300,7 +318,7 @@ async function processWebhook(payload: WatiWebhook, rawBody: string) {
     .from("whatsapp_webhook_events")
     .update({ processed_at: new Date().toISOString(), processing_error: null })
     .eq("id", event.id);
-  return { processed: true };
+  return { processed: true, immediateJobId };
 }
 
 export async function POST(request: Request) {
@@ -330,7 +348,12 @@ export async function POST(request: Request) {
   try {
     const result = await processWebhook(payload, rawBody);
     after(async () => {
-      await dispatchWhatsAppJobs({ limit: 10 });
+      if (!result.immediateJobId) return;
+      try {
+        await dispatchWhatsAppJob(result.immediateJobId);
+      } catch (dispatchError) {
+        console.error("Immediate inbound WhatsApp dispatch failed", dispatchError);
+      }
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

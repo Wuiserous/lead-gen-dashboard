@@ -9,7 +9,7 @@ import {
   normalizeIndianPhone,
   secureHash,
 } from "@/lib/validation";
-import { dispatchWhatsAppJobs } from "@/lib/whatsapp/dispatch";
+import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -90,12 +90,12 @@ export async function POST(request: Request) {
     .eq("status", "pending")
     .limit(1)
     .maybeSingle();
-  const whatsappQueued = Boolean(queuedJob);
+  const whatsappQueued = Boolean(queuedJob?.id);
 
   after(async () => {
     const results = await Promise.allSettled([
       whatsappQueued
-        ? dispatchWhatsAppJobs({ limit: 10 })
+        ? dispatchWhatsAppJob(queuedJob!.id)
         : Promise.resolve(null),
       dispatchEmailJobs({ limit: 10 }),
     ]);
