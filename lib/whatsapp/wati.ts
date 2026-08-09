@@ -148,7 +148,7 @@ export async function sendWatiButtons(input: {
             ? { header: { type: "text", text: input.header } }
             : {}),
           body: input.body,
-          footer: input.footer ?? "Persevex · Reply STOP anytime",
+          footer: input.footer ?? "Persevex",
           buttons: input.buttons.slice(0, 3).map((text) => ({ text: text.slice(0, 20) })),
         },
       },
@@ -163,7 +163,7 @@ export async function sendWatiButtons(input: {
         ? { header: { type: "Text", text: input.header } }
         : {}),
       body: input.body,
-      footer: input.footer ?? "Persevex · Reply STOP anytime",
+      footer: input.footer ?? "Persevex",
       buttons: input.buttons
         .slice(0, 3)
         .map((text) => ({ text: text.slice(0, 20) })),
@@ -192,7 +192,7 @@ export async function sendWatiList(input: {
         list_message: {
           header: input.header?.slice(0, 60),
           body: input.body.slice(0, 1024),
-          footer: input.footer ?? "Persevex · Reply STOP anytime",
+          footer: input.footer ?? "Persevex",
           button_text: input.buttonText,
           sections: [
             {
@@ -214,7 +214,7 @@ export async function sendWatiList(input: {
     {
       header: input.header?.slice(0, 60),
       body: input.body.slice(0, 1024),
-      footer: input.footer ?? "Persevex · Reply STOP anytime",
+      footer: input.footer ?? "Persevex",
       buttonText: input.buttonText,
       sections: [
         {

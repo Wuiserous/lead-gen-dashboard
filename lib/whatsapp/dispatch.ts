@@ -49,7 +49,6 @@ type RegistrationContext = {
   name: string;
   phone: string;
   preferred_domain: string;
-  status: string;
   credited_sales_id: string;
   credited_team_id: string;
   ambassador_id: string;
@@ -81,7 +80,7 @@ async function loadJobContext(job: WhatsAppJob) {
     admin
       .from("registrations")
       .select(
-        "id,name,phone,preferred_domain,status,credited_sales_id,credited_team_id,ambassador_id,ambassador:ambassadors(name)",
+        "id,name,phone,preferred_domain,credited_sales_id,credited_team_id,ambassador_id,ambassador:ambassadors(name)",
       )
       .eq("id", job.registration_id)
       .maybeSingle(),
@@ -306,10 +305,6 @@ async function sendTemplateJob(
   await markMessageSent(prepared.id, conversation, result);
 
   if (templateKey === "welcome") {
-    const admin = createAdminSupabase();
-    if (registration.status === "new") {
-      await admin.from("registrations").update({ status: "contacted" }).eq("id", registration.id).eq("status", "new");
-    }
     await scheduleWelcomeReminders(job);
   }
 }
@@ -420,15 +415,10 @@ async function processInboundJob(
     ...flow.updates,
     last_error: null,
   };
-  const operations: Array<PromiseLike<unknown>> = [
-    admin.from("whatsapp_conversations").update(conversationUpdates).eq("id", conversation.id),
-  ];
-  if (flow.registrationStatus && registration.status !== "converted") {
-    operations.push(
-      admin.from("registrations").update({ status: flow.registrationStatus }).eq("id", registration.id),
-    );
-  }
-  await Promise.all(operations);
+  await admin
+    .from("whatsapp_conversations")
+    .update(conversationUpdates)
+    .eq("id", conversation.id);
 
   if (flow.cancelPending) await cancelPendingJobs(conversation.id, job.id);
   await sendFlowMessage(job, { ...conversation, ...conversationUpdates }, registration, flow.message);

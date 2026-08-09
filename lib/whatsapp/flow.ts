@@ -1,5 +1,3 @@
-import type { RegistrationStatus } from "@/lib/types";
-
 export type FlowConversation = {
   id: string;
   state: string;
@@ -29,7 +27,6 @@ export type FlowMessage =
 export type FlowResult = {
   message: FlowMessage;
   updates: Record<string, string | number | boolean | null>;
-  registrationStatus?: RegistrationStatus;
   cancelPending?: boolean;
   assignHuman?: boolean;
 };
@@ -55,7 +52,7 @@ const mainMenu: FlowMessage = {
   kind: "buttons",
   header: "Your internship enquiry",
   body: "Choose what you would like to do next.",
-  buttons: ["Explore program", "Talk to advisor", "Not interested"],
+  buttons: ["Explore program", "Talk to advisor"],
 };
 
 const studyQuestion: FlowMessage = {
@@ -79,33 +76,6 @@ const goalQuestion: FlowMessage = {
   buttons: ["Build skills", "Certificates", "Stipend details"],
 };
 
-const startQuestion: FlowMessage = {
-  kind: "buttons",
-  header: "Preferred start",
-  body: "When would you prefer to begin?",
-  buttons: ["Start this month", "Next month", "Just exploring"],
-};
-
-const callbackList: FlowMessage = {
-  kind: "list",
-  header: "Advisor callback",
-  body: "Choose when you would prefer our advisor to contact you.",
-  buttonText: "Choose a time",
-  sectionTitle: "Available preferences",
-  rows: [
-    { title: "Call me now" },
-    { title: "10 AM - 12 PM" },
-    { title: "12 PM - 2 PM" },
-    { title: "2 PM - 4 PM" },
-    { title: "4 PM - 6 PM" },
-    { title: "6 PM - 8 PM" },
-    { title: "Tomorrow morning" },
-    { title: "Tomorrow afternoon" },
-    { title: "Tomorrow evening" },
-    { title: "WhatsApp chat only" },
-  ],
-};
-
 const faqList: FlowMessage = {
   kind: "list",
   header: "Program questions",
@@ -114,10 +84,9 @@ const faqList: FlowMessage = {
   sectionTitle: "Frequently asked",
   rows: [
     { title: "Program structure" },
-    { title: "Class schedule" },
+    { title: "Guided internship" },
     { title: "Projects" },
     { title: "Certificates" },
-    { title: "Fee details" },
     { title: "Stipend" },
     { title: "Eligibility" },
     { title: "Placement support" },
@@ -128,14 +97,17 @@ const faqList: FlowMessage = {
 
 function advisorResult(): FlowResult {
   return {
-    message: callbackList,
+    message: {
+      kind: "text",
+      body: "Soon our executive will contact you.",
+    },
     updates: {
       state: "advisor_requested",
-      flow_step: "choose_callback",
+      flow_step: "awaiting_human",
       urgency: "high",
-      bot_paused: false,
+      bot_paused: true,
     },
-    registrationStatus: "interested",
+    cancelPending: true,
     assignHuman: true,
   };
 }
@@ -144,17 +116,14 @@ function faqAnswer(intent: string): string | null {
   if (includesAny(intent, ["program structure", "structure"])) {
     return "The journey combines structured training with practical project work. The first phase builds domain fundamentals; the next phase focuses on applying them through guided projects.";
   }
-  if (includesAny(intent, ["class schedule", "schedule", "timing", "classes"])) {
-    return "Live training is planned around weekend/evening hours, with recordings available for missed sessions. Your advisor will confirm the current batch schedule before enrollment.";
+  if (includesAny(intent, ["guided internship", "internship"])) {
+    return "The internship path is guided by mentors and combines structured learning with practical, real-world project work.";
   }
   if (includesAny(intent, ["project"])) {
     return "The program includes practical, industry-style project work designed to help you build demonstrable experience for your portfolio and resume.";
   }
   if (includesAny(intent, ["certificate"])) {
     return "Applicable training, internship and performance certificates are issued after their respective completion requirements are met. Your advisor can show the current certificate formats.";
-  }
-  if (includesAny(intent, ["fee", "price", "cost", "payment"])) {
-    return "The current campaign structure is ₹4,500 for the training component: ₹1,500 for registration and ₹3,000 before training begins. Your advisor will confirm inclusions and applicable terms before payment.";
   }
   if (includesAny(intent, ["stipend", "salary", "earn"])) {
     return "Up to ₹18K–₹25K stipend based on performance. Eligibility is performance-based and is not guaranteed at the registration stage.";
@@ -175,6 +144,9 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
   const reply = normalized(rawReply);
   const currentScore = context.conversation.lead_score;
 
+  // Meta requires businesses to honor explicit opt-out requests. This safety
+  // path intentionally remains available even though it is not promoted in
+  // the conversational menus.
   if (includesAny(reply, ["stop", "unsubscribe", "remove me", "dont message", "no messages"])) {
     return {
       message: {
@@ -187,7 +159,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         opted_out_at: new Date().toISOString(),
         bot_paused: true,
       },
-      registrationStatus: "not_interested",
       cancelPending: true,
     };
   }
@@ -216,7 +187,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         flow_step: "closed",
         bot_paused: true,
       },
-      registrationStatus: "not_interested",
       cancelPending: true,
     };
   }
@@ -234,7 +204,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         lead_score: score(currentScore, 10),
         unknown_reply_count: 0,
       },
-      registrationStatus: "interested",
       cancelPending: true,
     };
   }
@@ -283,50 +252,25 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
 
   if (reply === "build skills" || reply === "certificates" || reply === "stipend details") {
     const primaryGoal = reply === "build skills" ? "skills" : reply === "certificates" ? "certificates" : "stipend";
-    const prefix =
-      primaryGoal === "skills"
-        ? "The program combines structured learning with practical projects and mentor support."
-        : primaryGoal === "certificates"
-          ? "Applicable certificates are issued after their respective completion requirements are met."
-          : "Up to ₹18K–₹25K stipend based on performance.";
-    return {
-      message: { ...startQuestion, body: `${prefix}\n\nWhen would you prefer to begin?` },
-      updates: { primary_goal: primaryGoal, flow_step: "ask_start", lead_score: score(currentScore, 8) },
-    };
-  }
-
-  if (reply === "start this month" || reply === "next month" || reply === "just exploring") {
-    const startPreference = reply === "start this month" ? "current" : reply === "next month" ? "next" : "exploring";
-    const addition = startPreference === "current" ? 20 : startPreference === "next" ? 10 : 2;
     return {
       message: {
         kind: "buttons",
         header: `${context.domain} path`,
-        body: `Based on your answers, ${context.name}, this path appears relevant for you.\n\n✓ Structured training\n✓ Practical project work\n✓ Weekend-friendly learning\n✓ Live sessions and recordings\n✓ Mentor support\n\nWhat would you like to see next?`,
-        buttons: ["Fee & schedule", "Talk to advisor", "View FAQs"],
+        body: `Based on your interests, ${context.name}, this ${context.domain} path includes:\n\n✓ Structured training\n✓ Guided Internship\n✓ Real World Projects\n✓ Live sessions and recordings\n✓ Mentor support\n\nWould you like to talk to our executive?`,
+        buttons: ["Talk to advisor", "View FAQs"],
       },
       updates: {
-        start_preference: startPreference,
+        primary_goal: primaryGoal,
         state: "qualified",
         flow_step: "summary",
-        lead_score: score(currentScore, addition),
-        urgency: startPreference === "current" ? "high" : startPreference === "next" ? "medium" : "low",
+        lead_score: score(currentScore, 16),
+        urgency: "medium",
       },
-      registrationStatus: startPreference === "exploring" ? "follow_up" : "interested",
     };
   }
 
   if (includesAny(reply, ["fee & schedule", "view fee", "fee details", "fee", "price", "cost", "payment"])) {
-    return {
-      message: {
-        kind: "buttons",
-        header: "Fee and enrollment",
-        body: "The current campaign fee for the training component is ₹4,500: ₹1,500 for registration and ₹3,000 before training begins. Your advisor will confirm inclusions and applicable terms before payment.",
-        buttons: ["Ready to enroll", "Talk first", "Need time"],
-      },
-      updates: { flow_step: "fee", lead_score: score(currentScore, 12) },
-      registrationStatus: "interested",
-    };
+    return advisorResult();
   }
 
   if (reply === "ready to enroll" || includesAny(reply, ["join", "enroll", "ready to pay"])) {
@@ -342,7 +286,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         lead_score: score(currentScore, 30),
         bot_paused: true,
       },
-      registrationStatus: "interested",
       cancelPending: true,
       assignHuman: true,
     };
@@ -359,7 +302,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         flow_step: "paused_by_student",
         bot_paused: true,
       },
-      registrationStatus: "follow_up",
       cancelPending: true,
     };
   }
@@ -373,7 +315,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         buttons: ["Later today", "Tomorrow", "In 3 days"],
       },
       updates: { state: "follow_up", flow_step: "choose_follow_up" },
-      registrationStatus: "follow_up",
     };
   }
 
@@ -389,7 +330,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         flow_step: "waiting_follow_up",
         follow_up_at: new Date(Date.now() + delayHours * 60 * 60 * 1000).toISOString(),
       },
-      registrationStatus: "follow_up",
     };
   }
 
@@ -397,32 +337,20 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
     return { message: faqList, updates: { flow_step: "faq" } };
   }
 
-  if (reply === "whatsapp chat only") {
-    return {
-      message: { kind: "text", body: "Your advisor has been notified and will continue with you here on WhatsApp." },
-      updates: { state: "advisor_requested", flow_step: "awaiting_human", urgency: "high", bot_paused: true },
-      registrationStatus: "interested",
-      cancelPending: true,
-      assignHuman: true,
-    };
-  }
-
+  // Old interactive callback and fee buttons may still exist in already-sent
+  // WhatsApp messages. Route every legacy reply to the new direct handoff.
   if (
-    includesAny(reply, ["call me now", "am -", "pm -", "tomorrow morning", "tomorrow afternoon", "tomorrow evening"])
+    includesAny(reply, [
+      "call me now",
+      "am -",
+      "pm -",
+      "tomorrow morning",
+      "tomorrow afternoon",
+      "tomorrow evening",
+      "whatsapp chat only",
+    ])
   ) {
-    return {
-      message: { kind: "text", body: `Your callback preference has been saved: ${rawReply.trim()}. Your assigned advisor will soon contact you.` },
-      updates: {
-        state: "advisor_requested",
-        flow_step: "awaiting_human",
-        urgency: "high",
-        bot_paused: true,
-        follow_up_at: new Date().toISOString(),
-      },
-      registrationStatus: "interested",
-      cancelPending: true,
-      assignHuman: true,
-    };
+    return advisorResult();
   }
 
   const answer = faqAnswer(reply);
@@ -451,7 +379,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
         bot_paused: true,
         urgency: "high",
       },
-      registrationStatus: "interested",
       cancelPending: true,
       assignHuman: true,
     };
@@ -461,7 +388,7 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
     message: {
       kind: "buttons",
       body: "I want to guide you correctly. Please choose the closest option.",
-      buttons: ["Program details", "Fee & schedule", "Human help"],
+      buttons: ["Program details", "Talk to advisor", "View FAQs"],
     },
     updates: { unknown_reply_count: nextUnknownCount },
   };

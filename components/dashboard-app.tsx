@@ -105,7 +105,17 @@ function formatDate(value: string) {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: "Asia/Kolkata",
   });
+}
+
+function formatTime(value: string) {
+  return `${new Date(value).toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  })} IST`;
 }
 
 function formatDateTime(value: string) {
@@ -114,6 +124,7 @@ function formatDateTime(value: string) {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Asia/Kolkata",
   });
 }
 
@@ -1100,6 +1111,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               <LeadViewSummary summary={data.summary} />
               <LeadsTable
                 registrations={filteredRegistrations}
+                employees={data.employees}
                 canDelete={data.user.role !== "sales"}
                 whatsappAccess={data.user.role === "admin" || data.user.role === "sales"}
                 onUpdate={updateDashboard}
@@ -2578,21 +2590,27 @@ function AmbassadorsView({
 
 function LeadsTable({
   registrations,
+  employees,
   canDelete,
   whatsappAccess,
   onUpdate,
   onReconcile,
 }: {
   registrations: Registration[];
+  employees: Profile[];
   canDelete: boolean;
   whatsappAccess: boolean;
   onUpdate: DashboardUpdater;
   onReconcile: () => void;
 }) {
+  const executiveNames = new Map(
+    employees.map((employee) => [employee.id, employee.full_name]),
+  );
+
   return (
     <div className="data-table">
       <div className={`data-row lead-grid ${whatsappAccess ? "" : "no-whatsapp"} table-header`}>
-        <span>Student</span><span>Group / CA</span><span>Domain</span><span>Registered</span>
+        <span>Student</span><span>Group / CA</span><span>Domain</span><span>Captured at</span>
         {whatsappAccess && <span>WhatsApp</span>}
         <span>Status</span><span>Follow-up note</span><span />
       </div>
@@ -2600,6 +2618,7 @@ function LeadsTable({
         <LeadRow
           key={lead.id}
           lead={lead}
+          executiveName={executiveNames.get(lead.credited_sales_id) ?? "Unassigned"}
           canDelete={canDelete}
           whatsappAccess={whatsappAccess}
           onUpdate={onUpdate}
@@ -2618,12 +2637,14 @@ function LeadsTable({
 
 function LeadRow({
   lead,
+  executiveName,
   canDelete,
   whatsappAccess,
   onUpdate,
   onReconcile,
 }: {
   lead: Registration;
+  executiveName: string;
   canDelete: boolean;
   whatsappAccess: boolean;
   onUpdate: DashboardUpdater;
@@ -2737,9 +2758,17 @@ function LeadRow({
           <small>{lead.phone}</small>
         </div>
       </div>
-      <span>{ambassadorLabel(lead)}</span>
+      <div className="lead-source-cell">
+        <span>{ambassadorLabel(lead)}</span>
+        <small className="executive-tag" title={`Executive: ${executiveName}`}>
+          Executive: {executiveName}
+        </small>
+      </div>
       <span className="domain-tag">{lead.preferred_domain}</span>
-      <span>{formatDate(lead.created_at)}</span>
+      <span className="captured-at" title={new Date(lead.created_at).toISOString()}>
+        <strong>{formatDate(lead.created_at)}</strong>
+        <small>{formatTime(lead.created_at)}</small>
+      </span>
       {whatsappAccess && (
         <button
           type="button"
