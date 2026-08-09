@@ -100,6 +100,7 @@ async function processWebhook(
   payload: WatiWebhook,
   rawBody: string,
 ): Promise<WebhookProcessResult> {
+  const nativeChatbotEnabled = watiEnv().nativeChatbotEnabled;
   const admin = createAdminSupabase();
   const eventType = stringValue(payload.eventType || payload.event_type || "unknown");
   const dedupeKey = webhookDedupeKey(payload, rawBody);
@@ -214,7 +215,7 @@ async function processWebhook(
       })
       .eq("id", conversation.id);
 
-    if (employeeWatiEnabled) {
+    if (employeeWatiEnabled && !nativeChatbotEnabled) {
       const { data: immediateJob, error: immediateJobError } = await admin
         .from("whatsapp_jobs")
         .upsert(
@@ -233,7 +234,7 @@ async function processWebhook(
         throw new Error("Unable to queue the incoming WhatsApp reply.");
       }
       immediateJobId = immediateJob?.id;
-    } else {
+    } else if (!employeeWatiEnabled) {
       await admin
         .from("whatsapp_conversations")
         .update({ bot_paused: true })

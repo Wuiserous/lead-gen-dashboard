@@ -44,16 +44,6 @@ export function StudentRegistrationForm({
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [whatsappQueued, setWhatsAppQueued] = useState(false);
-  const [confirmingPhone, setConfirmingPhone] = useState(false);
-
-  function reviewDetails(event: React.FormEvent) {
-    event.preventDefault();
-    setError("");
-    setConfirmingPhone(true);
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -98,39 +88,8 @@ export function StudentRegistrationForm({
     );
   }
 
-  if (confirmingPhone) {
-    return (
-      <form className="registration-card phone-confirmation-card" onSubmit={submit}>
-        <span className="eyebrow">CHECK YOUR NUMBER</span>
-        <h2>Is this mobile number correct?</h2>
-        <p>Please check it once. This is where the Persevex team will contact you.</p>
-        <div className="phone-confirmation-number">+91 {phone}</div>
-        <div className="phone-confirmation-details">
-          <span><small>Name</small><strong>{name.trim()}</strong></span>
-          <span><small>Domain</small><strong>{domain}</strong></span>
-        </div>
-        {error && <div className="alert error">{error}</div>}
-        <button className="gold-button wide" type="submit" disabled={loading}>
-          {loading ? "Registering..." : "Confirm & register"}
-          {!loading && <CheckCircle2 size={18} />}
-        </button>
-        <button
-          type="button"
-          className="phone-confirmation-edit"
-          onClick={() => {
-            setError("");
-            setConfirmingPhone(false);
-          }}
-          disabled={loading}
-        >
-          No, edit my details
-        </button>
-      </form>
-    );
-  }
-
   return (
-    <form className="registration-card" onSubmit={reviewDetails}>
+    <form className="registration-card" onSubmit={submit}>
       <span className="eyebrow">ONE STEP · NO LONG APPLICATION</span>
       <h2>Register for your internship</h2>
       <p>Select a domain. Share your name and mobile. Done.</p>
@@ -199,9 +158,9 @@ export function StudentRegistrationForm({
         updates and counsellor assistance from Persevex on WhatsApp. Reply STOP
         anytime to unsubscribe.
       </p>
-      <button className="gold-button wide" type="submit">
-        Review my number
-        <ArrowRight size={18} />
+      <button className="gold-button wide" type="submit" disabled={loading}>
+        {loading ? "Registering..." : "Register for internship"}
+        {!loading && <ArrowRight size={18} />}
       </button>
     </form>
   );
