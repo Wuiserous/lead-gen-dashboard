@@ -15,6 +15,7 @@
     "test": "npm run lint && npm run typecheck && npm run build",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:verify-whatsapp": "tsx scripts/verify-whatsapp.ts",
+    "db:backfill-wati": "tsx scripts/backfill-wati-outbound.ts",
     "bootstrap:admin": "tsx scripts/bootstrap-admin.ts"
   },
   "dependencies": {

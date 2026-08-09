@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
-import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -12,7 +11,6 @@ type WebhookProcessResult = {
   duplicate?: boolean;
   ignored?: boolean;
   processed?: boolean;
-  immediateJobId?: string;
 };
 
 function safeEqual(left: string, right: string) {
@@ -63,6 +61,7 @@ function webhookDedupeKey(payload: WatiWebhook, rawBody: string) {
 
 function statusFromEvent(payload: WatiWebhook) {
   const value = `${stringValue(payload.eventType)} ${stringValue(payload.statusString)}`.toLowerCase();
+  if (value.includes("replied")) return null;
   if (value.includes("failed")) return "failed";
   if (value.includes("read")) return "read";
   if (value.includes("delivered")) return "delivered";
@@ -73,6 +72,71 @@ function statusFromEvent(payload: WatiWebhook) {
 function incomingEvent(payload: WatiWebhook) {
   const eventType = stringValue(payload.eventType).toLowerCase();
   return payload.owner === false || eventType === "message" || eventType === "messagereceived";
+}
+
+function outboundMessageEvent(payload: WatiWebhook) {
+  const eventType = stringValue(payload.eventType || payload.event_type).toLowerCase();
+  if (eventType.includes("replied")) return false;
+  return (
+    payload.owner === true ||
+    eventType.startsWith("sessionmessage") ||
+    eventType.startsWith("templatemessage") ||
+    eventType.startsWith("sentmessage")
+  );
+}
+
+function payloadTimestamp(payload: WatiWebhook) {
+  const created = stringValue(payload.created);
+  if (created) {
+    const parsed = Date.parse(created);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  }
+  const numericTimestamp = Number(payload.timestamp);
+  if (Number.isFinite(numericTimestamp) && numericTimestamp > 0) {
+    const milliseconds = numericTimestamp > 10_000_000_000
+      ? numericTimestamp
+      : numericTimestamp * 1_000;
+    const parsed = new Date(milliseconds);
+    if (Number.isFinite(parsed.getTime())) return parsed.toISOString();
+  }
+  return new Date().toISOString();
+}
+
+function outboundBody(payload: WatiWebhook) {
+  const body = replyText(payload);
+  if (body) return body;
+  const data = payload.data;
+  if (data && typeof data === "object") {
+    const object = data as Record<string, unknown>;
+    for (const key of ["caption", "body", "title", "fileName", "filename", "url"]) {
+      const value = stringValue(object[key]).trim();
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+function outboundIntent(payload: WatiWebhook) {
+  const eventType = stringValue(payload.eventType || payload.event_type).toLowerCase();
+  if (stringValue(payload.chatbotTriggeredEventId)) return "wati_chatbot";
+  if (eventType.startsWith("templatemessage")) return "wati_template";
+  if (stringValue(payload.operatorEmail)) return "wati_operator";
+  return "wati_outbound";
+}
+
+function advancedMessageStatus(current: string, candidate: string) {
+  const rank: Record<string, number> = {
+    queued: 0,
+    sending: 1,
+    sent: 2,
+    delivered: 3,
+    read: 4,
+  };
+  if (candidate === "failed") {
+    return ["delivered", "read"].includes(current) ? current : candidate;
+  }
+  if (current === "failed") return candidate;
+  return (rank[candidate] ?? -1) > (rank[current] ?? -1) ? candidate : current;
 }
 
 function nextEarlyStage(current: string, status: string) {
@@ -94,6 +158,115 @@ async function recordActivity(conversation: Record<string, unknown>) {
     ambassador_id: conversation.ambassador_id,
     entity_id: conversation.registration_id,
   });
+}
+
+async function syncOutboundMessage(
+  conversation: Record<string, unknown>,
+  payload: WatiWebhook,
+  status: string,
+) {
+  const admin = createAdminSupabase();
+  const localMessageId = stringValue(payload.localMessageId) || null;
+  const whatsappMessageId = stringValue(payload.whatsappMessageId) || null;
+  const occurredAt = payloadTimestamp(payload);
+  const body = outboundBody(payload);
+  const messageType = stringValue(payload.type || "message").toLowerCase();
+  const templateName = stringValue(payload.templateName) || null;
+
+  let existing: { id: string; status: string } | null = null;
+  if (localMessageId) {
+    const { data, error } = await admin
+      .from("whatsapp_messages")
+      .select("id,status")
+      .eq("wati_local_message_id", localMessageId)
+      .maybeSingle();
+    if (error) throw new Error("Unable to match the WATI outbound message.");
+    existing = data;
+  }
+  if (!existing && whatsappMessageId) {
+    const { data, error } = await admin
+      .from("whatsapp_messages")
+      .select("id,status")
+      .eq("whatsapp_message_id", whatsappMessageId)
+      .maybeSingle();
+    if (error) throw new Error("Unable to match the WhatsApp outbound message.");
+    existing = data;
+  }
+  if (!existing && (body || templateName)) {
+    const occurredAtMs = Date.parse(occurredAt);
+    const { data, error } = await admin
+      .from("whatsapp_messages")
+      .select("id,status,body,template_name")
+      .eq("conversation_id", conversation.id)
+      .eq("direction", "outbound")
+      .is("wati_local_message_id", null)
+      .is("whatsapp_message_id", null)
+      .gte("created_at", new Date(occurredAtMs - 15 * 60_000).toISOString())
+      .lte("created_at", new Date(occurredAtMs + 2 * 60_000).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) throw new Error("Unable to reconcile the WATI outbound message.");
+    const candidate = (data ?? []).find((message: {
+      id: string;
+      status: string;
+      body: string;
+      template_name: string | null;
+    }) =>
+      templateName
+        ? message.template_name === templateName
+        : Boolean(body && message.body.trim() === body.trim()),
+    );
+    if (candidate) existing = { id: candidate.id, status: candidate.status };
+  }
+
+  const finalStatus = existing
+    ? advancedMessageStatus(existing.status, status)
+    : status;
+  const messageValues = {
+    direction: "outbound",
+    message_type: messageType,
+    ...(body ? { body } : {}),
+    ...(status === "sent" || !existing ? { intent: outboundIntent(payload) } : {}),
+    ...(templateName ? { template_name: templateName } : {}),
+    ...(localMessageId ? { wati_local_message_id: localMessageId } : {}),
+    ...(whatsappMessageId ? { whatsapp_message_id: whatsappMessageId } : {}),
+    status: finalStatus,
+    ...(status === "sent" ? { sent_at: occurredAt } : {}),
+    ...(status === "delivered" ? { delivered_at: occurredAt } : {}),
+    ...(status === "read" ? { read_at: occurredAt } : {}),
+    ...(status === "failed"
+      ? {
+          error_code: stringValue(payload.failedCode) || null,
+          error_detail:
+            stringValue(payload.failedDetail) || "Message delivery failed.",
+        }
+      : { error_code: null, error_detail: null }),
+  };
+
+  if (existing) {
+    const { error } = await admin
+      .from("whatsapp_messages")
+      .update(messageValues)
+      .eq("id", existing.id);
+    if (error) throw new Error("Unable to update the WATI outbound message.");
+    return { occurredAt, status: finalStatus };
+  }
+
+  const { error } = await admin.from("whatsapp_messages").insert({
+    conversation_id: conversation.id,
+    registration_id: conversation.registration_id,
+    ...messageValues,
+    body: body ?? `[${messageType || "message"} message]`,
+    sent_at: occurredAt,
+    created_at: occurredAt,
+  });
+  if (error) {
+    if (error.code === "23505") {
+      return syncOutboundMessage(conversation, payload, status);
+    }
+    throw new Error("Unable to store the WATI outbound message.");
+  }
+  return { occurredAt, status: finalStatus };
 }
 
 async function processWebhook(
@@ -145,7 +318,6 @@ async function processWebhook(
     assignedEmployee?.active && assignedEmployee?.wati_enabled,
   );
 
-  let immediateJobId: string | undefined;
   if (incomingEvent(payload)) {
     const whatsappMessageId = stringValue(payload.whatsappMessageId) || null;
     if (whatsappMessageId) {
@@ -224,73 +396,39 @@ async function processWebhook(
     await recordActivity(updatedConversation);
   } else {
     const status = statusFromEvent(payload);
-    const localMessageId = stringValue(payload.localMessageId);
-    const whatsappMessageId = stringValue(payload.whatsappMessageId);
-    const messageUpdates = {
-      ...(status ? { status } : {}),
-      ...(status === "sent" ? { sent_at: new Date().toISOString() } : {}),
-      ...(status === "delivered" ? { delivered_at: new Date().toISOString() } : {}),
-      ...(status === "read" ? { read_at: new Date().toISOString() } : {}),
-      ...(status === "failed"
-        ? {
-            error_code: stringValue(payload.failedCode) || null,
-            error_detail: stringValue(payload.failedDetail) || "Message delivery failed.",
-          }
-        : {}),
-      ...(whatsappMessageId ? { whatsapp_message_id: whatsappMessageId } : {}),
-    };
-    if (localMessageId) {
-      await admin
-        .from("whatsapp_messages")
-        .update(messageUpdates)
-        .eq("wati_local_message_id", localMessageId);
-    } else if (whatsappMessageId) {
-      await admin
-        .from("whatsapp_messages")
-        .update(messageUpdates)
-        .eq("whatsapp_message_id", whatsappMessageId);
-    } else {
-      const { data: latestOutbound } = await admin
-        .from("whatsapp_messages")
-        .select("id")
-        .eq("conversation_id", conversation.id)
-        .eq("direction", "outbound")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (latestOutbound) {
-        await admin
-          .from("whatsapp_messages")
-          .update(messageUpdates)
-          .eq("id", latestOutbound.id);
-      }
-    }
-
-    if (status) {
+    if (status && outboundMessageEvent(payload)) {
+      const syncedMessage = await syncOutboundMessage(conversation, payload, status);
+      const messageStatus = syncedMessage.status;
       const nextState =
-        status === "failed" && ["queued", "sent", "delivered", "read"].includes(conversation.state)
+        messageStatus === "failed" && ["queued", "sent", "delivered", "read"].includes(conversation.state)
           ? "failed"
-          : nextEarlyStage(conversation.state, status);
+          : nextEarlyStage(conversation.state, messageStatus);
       const updatedConversation = {
         ...conversation,
         state: nextState,
-        last_message_status: status,
+        last_message_status: messageStatus,
         last_error:
-          status === "failed"
+          messageStatus === "failed"
             ? stringValue(payload.failedDetail) || "Message delivery failed."
             : null,
         wati_conversation_id:
           stringValue(payload.conversationId) || conversation.wati_conversation_id,
         wati_ticket_id: stringValue(payload.ticketId) || conversation.wati_ticket_id,
+        last_outbound_at:
+          !conversation.last_outbound_at ||
+          Date.parse(syncedMessage.occurredAt) > Date.parse(conversation.last_outbound_at)
+            ? syncedMessage.occurredAt
+            : conversation.last_outbound_at,
       };
       await admin
         .from("whatsapp_conversations")
         .update({
           state: updatedConversation.state,
-          last_message_status: status,
+          last_message_status: updatedConversation.last_message_status,
           last_error: updatedConversation.last_error,
           wati_conversation_id: updatedConversation.wati_conversation_id,
           wati_ticket_id: updatedConversation.wati_ticket_id,
+          last_outbound_at: updatedConversation.last_outbound_at,
         })
         .eq("id", conversation.id);
       await recordActivity(updatedConversation);
@@ -301,7 +439,7 @@ async function processWebhook(
     .from("whatsapp_webhook_events")
     .update({ processed_at: new Date().toISOString(), processing_error: null })
     .eq("id", event.id);
-  return { processed: true, immediateJobId };
+  return { processed: true };
 }
 
 export async function POST(request: Request) {
@@ -330,17 +468,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await processWebhook(payload, rawBody);
-    let replyDispatched = false;
-    if (result.immediateJobId) {
-      try {
-        const dispatch = await dispatchWhatsAppJob(result.immediateJobId);
-        replyDispatched = dispatch.completed > 0;
-      } catch (dispatchError) {
-        // The job stays in the durable queue and the cron worker retries it.
-        console.error("Immediate inbound WhatsApp dispatch failed", dispatchError);
-      }
-    }
-    return NextResponse.json({ ok: true, ...result, replyDispatched });
+    return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     console.error("WATI webhook processing failed", error);
     return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });
