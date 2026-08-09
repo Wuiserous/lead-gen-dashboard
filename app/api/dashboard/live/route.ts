@@ -78,6 +78,14 @@ export async function GET(request: Request) {
   const search = safeSearch(params.get("search"));
   const requestedPage = Math.max(1, Number(params.get("page")) || 1);
   const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize")) || 50));
+  const requestedAmbassadorPage = Math.max(
+    1,
+    Number(params.get("ambassadorPage")) || 1,
+  );
+  const ambassadorPageSize = Math.min(
+    48,
+    Math.max(12, Number(params.get("ambassadorPageSize")) || 24),
+  );
   const isRegistrationEvent = event.event_type.startsWith("registration_");
   const isAmbassadorEvent = event.event_type.startsWith("ambassador_");
   const isEmployeeEvent = event.event_type.startsWith("employee_");
@@ -151,6 +159,12 @@ export async function GET(request: Request) {
     ? Math.max(1, Math.ceil(summary.registrationRowCount / pageSize))
     : 1;
   const page = summary ? Math.min(requestedPage, totalPages) : requestedPage;
+  const ambassadorTotalPages = summary
+    ? Math.max(1, Math.ceil(summary.ambassadorCount / ambassadorPageSize))
+    : 1;
+  const ambassadorPage = summary
+    ? Math.min(requestedAmbassadorPage, ambassadorTotalPages)
+    : requestedAmbassadorPage;
   const payload: DashboardLiveUpdate = {
     event,
     registration: registration.data as Registration | null,
@@ -165,6 +179,14 @@ export async function GET(request: Request) {
           pageSize,
           totalRows: summary.registrationRowCount,
           totalPages,
+        }
+      : null,
+    ambassadorPagination: summary
+      ? {
+          page: ambassadorPage,
+          pageSize: ambassadorPageSize,
+          totalRows: summary.ambassadorCount,
+          totalPages: ambassadorTotalPages,
         }
       : null,
   };

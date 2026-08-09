@@ -50,15 +50,40 @@ variables:
 - `WATI_WELCOME_TEMPLATE` (defaults to `persevex_lead_welcome_v1`)
 - `WATI_REMINDER_TEMPLATE` (defaults to `persevex_lead_reminder_v1`)
 - `WATI_FINAL_REMINDER_TEMPLATE` (defaults to `persevex_lead_final_reminder_v1`)
+- `WATI_DISPATCH_CONCURRENCY` (optional, defaults to `4`; keep at or below `10`)
 - `RESEND_API_KEY` (server-side Resend API key)
 - `RESEND_FROM_EMAIL` (for example `Persevex <support@persevex.com>`)
 - `RESEND_REPLY_TO` (the monitored inbox for Campus Ambassador replies)
 - `RESEND_WEBHOOK_SECRET` (the `whsec_...` signing secret for the production webhook)
+- `RESEND_DISPATCH_CONCURRENCY` (optional, defaults to `8`; keep at or below `20`)
 - `CRON_SECRET` (a separate long random secret)
 
 `DATABASE_URL`, `SUPABASE_PROJECT_REF`, and `SUPABASE_POOLER_HOST` are only
 needed by the local migration command; the deployed app does not open direct
 Postgres connections.
+
+This is a commercial production application and must run on Vercel Pro or a
+higher plan. Vercel application users are not Vercel team seats; only people
+who need access to the Vercel project itself need Vercel membership.
+
+## Scale and operations
+
+- Dashboard updates are Realtime-first. A full consistency pass runs every five
+  minutes while Realtime is healthy, every minute while it is disconnected,
+  and whenever the tab regains focus.
+- Registrations and Campus Ambassador cards are independently server-paginated.
+  Group filtering uses a scoped server search rather than loading every group
+  into every browser.
+- WATI and Resend jobs use bounded concurrency and idempotent database claims.
+  WATI `Retry-After` instructions are respected before retrying throttled jobs.
+- Processed WATI/Resend webhook envelopes are retained for 30 days and transient
+  dashboard activity for 14 days. Leads, groups, chat messages, email delivery
+  records, audit events, and employee records are not removed by this cleanup.
+- Run `npm run db:load-test` for the read-only 100-user database simulation.
+  Override `LOAD_TEST_USERS`, `LOAD_TEST_REQUEST_CONCURRENCY`, and
+  `LOAD_TEST_DB_CONCURRENCY` only when deliberately testing a different load.
+- `npm run db:migrate` records applied filenames in `schema_migrations`; it no
+  longer replays historical migrations against an existing production schema.
 
 ## Resend production setup
 

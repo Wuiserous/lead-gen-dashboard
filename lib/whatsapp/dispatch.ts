@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { watiConfigured, watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import {
@@ -346,7 +347,11 @@ async function failJob(job: WhatsAppJob, error: unknown) {
   const attempts = job.attempts + 1;
   const retryable = !(error instanceof WatiApiError) || error.retryable;
   const willRetry = retryable && attempts < job.max_attempts;
-  const delayMinutes = Math.min(60, 2 ** attempts);
+  const exponentialDelayMs = Math.min(60, 2 ** attempts) * 60_000;
+  const retryDelayMs =
+    error instanceof WatiApiError && error.retryAfterMs !== null
+      ? Math.max(exponentialDelayMs, error.retryAfterMs)
+      : exponentialDelayMs;
   await Promise.all([
     admin
       .from("whatsapp_jobs")
@@ -354,7 +359,7 @@ async function failJob(job: WhatsAppJob, error: unknown) {
         attempts,
         status: willRetry ? "pending" : "failed",
         scheduled_for: willRetry
-          ? new Date(Date.now() + delayMinutes * 60_000).toISOString()
+          ? new Date(Date.now() + retryDelayMs).toISOString()
           : new Date().toISOString(),
         locked_at: null,
         locked_by: null,
@@ -382,19 +387,22 @@ export async function dispatchWhatsAppJobs(options?: { limit?: number }) {
   });
   if (error) throw new Error("Unable to claim WhatsApp jobs.");
   const jobs = (data ?? []) as WhatsAppJob[];
-  let completed = 0;
-  let failed = 0;
-
-  for (const job of jobs) {
-    try {
-      await executeJob(job);
-      await completeJob(job);
-      completed += 1;
-    } catch (jobError) {
-      await failJob(job, jobError);
-      failed += 1;
-    }
-  }
+  const outcomes = await mapWithConcurrency(
+    jobs,
+    watiEnv().dispatchConcurrency,
+    async (job) => {
+      try {
+        await executeJob(job);
+        await completeJob(job);
+        return "completed" as const;
+      } catch (jobError) {
+        await failJob(job, jobError);
+        return "failed" as const;
+      }
+    },
+  );
+  const completed = outcomes.filter((outcome) => outcome === "completed").length;
+  const failed = outcomes.length - completed;
 
   return { configured: true, claimed: jobs.length, completed, failed };
 }

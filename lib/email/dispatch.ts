@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { resendConfigured, resendEnv } from "@/lib/env";
 import { createResend } from "@/lib/email/resend";
 import {
@@ -226,20 +227,26 @@ export async function dispatchEmailJobs(options?: { limit?: number }) {
   if (error) throw new Error(`Unable to claim email jobs: ${error.message}`);
 
   const jobs = (data ?? []) as EmailJob[];
-  let sent = 0;
-  let cancelled = 0;
-  let failed = 0;
-  for (const job of jobs) {
-    try {
-      const result = await processEmailJob(job);
-      if (result === "cancelled") cancelled += 1;
-      else sent += 1;
-    } catch (jobError) {
-      failed += 1;
-      await markJobFailed(job, jobError);
-      console.error("Email dispatch failed", { jobId: job.id, error: errorText(jobError) });
-    }
-  }
+  const outcomes = await mapWithConcurrency(
+    jobs,
+    resendEnv().dispatchConcurrency,
+    async (job) => {
+      try {
+        const result = await processEmailJob(job);
+        return result === "cancelled" ? "cancelled" as const : "sent" as const;
+      } catch (jobError) {
+        await markJobFailed(job, jobError);
+        console.error("Email dispatch failed", {
+          jobId: job.id,
+          error: errorText(jobError),
+        });
+        return "failed" as const;
+      }
+    },
+  );
+  const sent = outcomes.filter((outcome) => outcome === "sent").length;
+  const cancelled = outcomes.filter((outcome) => outcome === "cancelled").length;
+  const failed = outcomes.filter((outcome) => outcome === "failed").length;
 
   return { configured: true, claimed: jobs.length, sent, cancelled, failed };
 }

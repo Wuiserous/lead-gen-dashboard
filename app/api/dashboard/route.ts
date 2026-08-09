@@ -55,6 +55,14 @@ export async function GET(request: Request) {
   const search = safeSearch(params.get("search"));
   const requestedPage = Math.max(1, Number(params.get("page")) || 1);
   const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize")) || 50));
+  const requestedAmbassadorPage = Math.max(
+    1,
+    Number(params.get("ambassadorPage")) || 1,
+  );
+  const ambassadorPageSize = Math.min(
+    48,
+    Math.max(12, Number(params.get("ambassadorPageSize")) || 24),
+  );
 
   let teamId = requestedTeamId;
   let salesId = requestedSalesId;
@@ -109,6 +117,15 @@ export async function GET(request: Request) {
     ambassadorsQuery = ambassadorsQuery.eq("sales_id", user.id);
   }
 
+  if (teamId) ambassadorsQuery = ambassadorsQuery.eq("team_id", teamId);
+  if (salesId) ambassadorsQuery = ambassadorsQuery.eq("sales_id", salesId);
+  if (ambassadorId) ambassadorsQuery = ambassadorsQuery.eq("id", ambassadorId);
+  if (startAt) {
+    ambassadorsQuery = ambassadorsQuery
+      .gte("created_at", startAt)
+      .lte("created_at", new Date().toISOString());
+  }
+
   if (teamId) registrationsQuery = registrationsQuery.eq("credited_team_id", teamId);
   if (salesId) registrationsQuery = registrationsQuery.eq("credited_sales_id", salesId);
   if (ambassadorId) registrationsQuery = registrationsQuery.eq("ambassador_id", ambassadorId);
@@ -125,12 +142,16 @@ export async function GET(request: Request) {
   }
 
   const offset = (requestedPage - 1) * pageSize;
+  const ambassadorOffset = (requestedAmbassadorPage - 1) * ambassadorPageSize;
   const [teams, employees, sales, ambassadors, registrations, settings, summaryResult] =
     await Promise.all([
       teamsQuery,
       employeesQuery,
       salesQuery,
-      ambassadorsQuery,
+      ambassadorsQuery.range(
+        ambassadorOffset,
+        ambassadorOffset + ambassadorPageSize - 1,
+      ),
       registrationsQuery.range(offset, offset + pageSize - 1),
       admin
         .from("app_settings")
@@ -160,7 +181,16 @@ export async function GET(request: Request) {
   const summary = (summaryResult.data ?? emptySummary) as DashboardSummary;
   const totalPages = Math.max(1, Math.ceil(summary.registrationRowCount / pageSize));
   const page = Math.min(requestedPage, totalPages);
+  const ambassadorTotalPages = Math.max(
+    1,
+    Math.ceil(summary.ambassadorCount / ambassadorPageSize),
+  );
+  const ambassadorPage = Math.min(
+    requestedAmbassadorPage,
+    ambassadorTotalPages,
+  );
   let registrationRows = registrations.data ?? [];
+  let ambassadorRows = ambassadors.data ?? [];
 
   // The common path stays fully parallel. Only refetch when a deletion made
   // the requested page disappear while the user was viewing it.
@@ -176,13 +206,39 @@ export async function GET(request: Request) {
     registrationRows = fallback.data ?? [];
   }
 
+  if (ambassadorPage !== requestedAmbassadorPage) {
+    const fallbackOffset = (ambassadorPage - 1) * ambassadorPageSize;
+    const fallback = await ambassadorsQuery.range(
+      fallbackOffset,
+      fallbackOffset + ambassadorPageSize - 1,
+    );
+    if (fallback.error) {
+      return errorResponse("Unable to load Campus Ambassadors.", 500);
+    }
+    ambassadorRows = fallback.data ?? [];
+  }
+
+  const rankingIds = summary.groupRankings.map((item) => item.ambassadorId);
+  let rankingAmbassadors: AmbassadorPerformance[] = [];
+  if (rankingIds.length) {
+    const rankingResult = await admin
+      .from("ambassador_performance")
+      .select("*")
+      .in("id", rankingIds);
+    if (rankingResult.error) {
+      return errorResponse("Unable to load group rankings.", 500);
+    }
+    rankingAmbassadors = (rankingResult.data ?? []) as AmbassadorPerformance[];
+  }
+
   const payload: DashboardData = {
     user,
     defaultTarget: Number(settings.data?.value ?? 30),
     teams: (teams.data ?? []) as TeamPerformance[],
     employees: (employees.data ?? []) as Profile[],
     salesPerformance: (sales.data ?? []) as SalesPerformance[],
-    ambassadors: (ambassadors.data ?? []) as AmbassadorPerformance[],
+    ambassadors: ambassadorRows as AmbassadorPerformance[],
+    rankingAmbassadors,
     registrations: registrationRows as unknown as Registration[],
     summary,
     pagination: {
@@ -190,6 +246,12 @@ export async function GET(request: Request) {
       pageSize,
       totalRows: summary.registrationRowCount,
       totalPages,
+    },
+    ambassadorPagination: {
+      page: ambassadorPage,
+      pageSize: ambassadorPageSize,
+      totalRows: summary.ambassadorCount,
+      totalPages: ambassadorTotalPages,
     },
   };
 

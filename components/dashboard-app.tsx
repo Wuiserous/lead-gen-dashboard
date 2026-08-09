@@ -53,6 +53,7 @@ import type {
   DashboardActivityEvent,
   DashboardData,
   DashboardLiveUpdate,
+  GroupOption,
   Profile,
   Registration,
   RegistrationStatus,
@@ -234,6 +235,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [exporting, setExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState("");
   const [page, setPage] = useState(1);
+  const [ambassadorPage, setAmbassadorPage] = useState(1);
   const effectiveExportScope: ExportScope =
     exportScope === "group" && groupFilter === "all" ? "current" : exportScope;
   const loadedOnce = useRef(Boolean(initialData));
@@ -253,6 +255,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     dateRange,
     debouncedSearch,
     page,
+    ambassadorPage,
   ].join("|");
   const reportingViewKeyRef = useRef(reportingViewKey);
   const skipBootstrapLoad = useRef(Boolean(initialData));
@@ -283,7 +286,12 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       if (quiet || loadedOnce.current) setRefreshing(true);
       else setLoading(true);
     }
-    const params = new URLSearchParams({ page: String(page), pageSize: "50" });
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: "50",
+      ambassadorPage: String(ambassadorPage),
+      ambassadorPageSize: "24",
+    });
     if (teamFilter !== "all") params.set("teamId", teamFilter);
     if (memberFilter !== "all") params.set("memberId", memberFilter);
     if (groupFilter !== "all") params.set("groupId", groupFilter);
@@ -362,6 +370,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       };
     });
     setPage(result.pagination.page);
+    setAmbassadorPage(result.ambassadorPagination.page);
     loadedOnce.current = true;
     setError("");
     if (!silent) {
@@ -369,11 +378,11 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dateRange, debouncedSearch, expectedRole, groupFilter, memberFilter, page, reportingViewKey, router, teamFilter]);
+  }, [ambassadorPage, dateRange, debouncedSearch, expectedRole, groupFilter, memberFilter, page, reportingViewKey, router, teamFilter]);
 
   const scheduleReconciliation = useCallback(() => {
     if (reconcileTimer.current) window.clearTimeout(reconcileTimer.current);
-    reconcileTimer.current = window.setTimeout(() => void load(true, true), 4_000);
+    reconcileTimer.current = window.setTimeout(() => void load(true, true), 20_000);
   }, [load]);
 
   useEffect(() => {
@@ -413,6 +422,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       eventId: String(event.id),
       page: String(page),
       pageSize: "50",
+      ambassadorPage: String(ambassadorPage),
+      ambassadorPageSize: "24",
     });
     if (teamFilter !== "all") params.set("teamId", teamFilter);
     if (memberFilter !== "all") params.set("memberId", memberFilter);
@@ -483,9 +494,24 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
         );
       }
       if (update.ambassador) {
-        ambassadors = upsertById(ambassadors, update.ambassador).sort(
-          (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at),
-        );
+        const existed = ambassadors.some((item) => item.id === update.ambassador?.id);
+        if (existed || current.ambassadorPagination.page === 1) {
+          ambassadors = upsertById(ambassadors, update.ambassador)
+            .sort(
+              (left, right) =>
+                Date.parse(right.created_at) - Date.parse(left.created_at),
+            )
+            .slice(0, current.ambassadorPagination.pageSize);
+        }
+      }
+
+      let rankingAmbassadors = current.rankingAmbassadors;
+      if (update.ambassador) {
+        rankingAmbassadors = rankingAmbassadors.some(
+          (item) => item.id === update.ambassador?.id,
+        )
+          ? upsertById(rankingAmbassadors, update.ambassador)
+          : rankingAmbassadors;
       }
 
       let employees = current.employees;
@@ -529,18 +555,30 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
         ...current,
         registrations,
         ambassadors,
+        rankingAmbassadors,
         employees,
         teams,
         salesPerformance,
         summary: applySummary && update.summary ? update.summary : current.summary,
         pagination: applySummary && update.pagination ? update.pagination : current.pagination,
+        ambassadorPagination:
+          applySummary && update.ambassadorPagination
+            ? update.ambassadorPagination
+            : current.ambassadorPagination,
       };
     });
     if (applySummary && update.pagination && update.pagination.page !== page) {
       setPage(update.pagination.page);
     }
+    if (
+      applySummary &&
+      update.ambassadorPagination &&
+      update.ambassadorPagination.page !== ambassadorPage
+    ) {
+      setAmbassadorPage(update.ambassadorPagination.page);
+    }
     scheduleReconciliation();
-  }, [dateRange, debouncedSearch, groupFilter, load, memberFilter, page, reportingViewKey, scheduleReconciliation, teamFilter]);
+  }, [ambassadorPage, dateRange, debouncedSearch, groupFilter, load, memberFilter, page, reportingViewKey, scheduleReconciliation, teamFilter]);
 
   const loadLiveEventRef = useRef(loadLiveEvent);
 
@@ -687,7 +725,10 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     const reconcile = () => {
       if (document.visibilityState === "visible") void load(true, true);
     };
-    const interval = window.setInterval(reconcile, 45_000);
+    // Realtime applies scoped row updates immediately. This slower pass is a
+    // consistency safety net, not a polling transport. When Realtime is down,
+    // temporarily reconcile more often until the socket reconnects.
+    const interval = window.setInterval(reconcile, live ? 5 * 60_000 : 60_000);
     document.addEventListener("visibilitychange", reconcile);
     window.addEventListener("focus", reconcile);
     window.addEventListener("online", reconcile);
@@ -698,7 +739,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       window.removeEventListener("online", reconcile);
       if (reconcileTimer.current) window.clearTimeout(reconcileTimer.current);
     };
-  }, [load]);
+  }, [live, load]);
 
   async function logout() {
     await createBrowserSupabase().auth.signOut();
@@ -997,6 +1038,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
             <AmbassadorsView
               data={data}
               ambassadors={filteredAmbassadors}
+              pagination={data.ambassadorPagination}
+              onPageChange={setAmbassadorPage}
               filters={
                 <ReportingFilters
                   data={data}
@@ -1521,13 +1564,8 @@ function ReportingFilters({
     (employee) =>
       (employee.role === "sales" || employee.role === "team_lead") &&
       (teamFilter === "all" || employee.team_id === teamFilter) &&
-      data.ambassadors.some((ambassador) => ambassador.sales_id === employee.id),
-  );
-  const groups = data.ambassadors.filter(
-    (ambassador) =>
-      (teamFilter === "all" || ambassador.team_id === teamFilter) &&
-      (memberFilter === "all" || ambassador.sales_id === memberFilter) &&
-      inDateRange(ambassador.created_at, dateRange),
+      (data.salesPerformance.find((item) => item.id === employee.id)
+        ?.ambassador_count ?? 0) > 0,
   );
 
   return (
@@ -1561,17 +1599,13 @@ function ReportingFilters({
           </select>
         </label>
       )}
-      <label>
-        Group / Campus Ambassador
-        <select value={groupFilter} onChange={(event) => onGroupChange(event.target.value)}>
-          <option value="all">All groups</option>
-          {groups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name} · {group.college}
-            </option>
-          ))}
-        </select>
-      </label>
+      <GroupSearchFilter
+        teamId={teamFilter}
+        memberId={memberFilter}
+        dateRange={dateRange}
+        value={groupFilter}
+        onChange={onGroupChange}
+      />
       <label>
         Date
         <select
@@ -1585,6 +1619,85 @@ function ReportingFilters({
         </select>
       </label>
     </div>
+  );
+}
+
+function GroupSearchFilter({
+  teamId,
+  memberId,
+  dateRange,
+  value,
+  onChange,
+}: {
+  teamId: string;
+  memberId: string;
+  dateRange: DateRange;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [options, setOptions] = useState<GroupOption[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (teamId !== "all") params.set("teamId", teamId);
+      if (memberId !== "all") params.set("memberId", memberId);
+      if (dateRange !== "all") params.set("dateRange", dateRange);
+      if (value !== "all") params.set("selectedId", value);
+      if (search.trim()) params.set("search", search.trim());
+      try {
+        const response = await fetch(`/api/groups/options?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const result = (await response.json()) as { options: GroupOption[] };
+        setOptions(result.options);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setOptions([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [dateRange, memberId, search, teamId, value]);
+
+  const selectedIsLoaded =
+    value === "all" || options.some((option) => option.id === value);
+
+  return (
+    <label className="group-filter-control">
+      Group / Campus Ambassador
+      <input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search name or college"
+        aria-label="Search Campus Ambassador groups"
+      />
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label="Select Campus Ambassador group"
+      >
+        <option value="all">{loading ? "Loading groups..." : "All groups"}</option>
+        {!selectedIsLoaded && <option value={value}>Selected group</option>}
+        {options.map((group) => (
+          <option key={group.id} value={group.id}>
+            {group.name} · {group.college}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -1603,14 +1716,16 @@ function Pagination({
   page,
   totalPages,
   totalRows,
+  pageSize = 50,
   onPageChange,
 }: {
   page: number;
   totalPages: number;
   totalRows: number;
+  pageSize?: number;
   onPageChange: (page: number) => void;
 }) {
-  if (totalRows <= 50) return null;
+  if (totalRows <= pageSize) return null;
   return (
     <div className="pagination-bar">
       <span>
@@ -1646,7 +1761,7 @@ function ReportingInsights({ data }: { data: DashboardData }) {
   }));
   const max = Math.max(1, ...days.map((day) => day.count));
   const ambassadorsById = new Map(
-    data.ambassadors.map((item) => [item.id, item]),
+    [...data.rankingAmbassadors, ...data.ambassadors].map((item) => [item.id, item]),
   );
   const groupRows = data.summary.groupRankings.flatMap((ranking) => {
     const ambassador = ambassadorsById.get(ranking.ambassadorId);
@@ -2137,6 +2252,8 @@ function EmployeesView({
 function AmbassadorsView({
   data,
   ambassadors,
+  pagination,
+  onPageChange,
   filters,
   onViewGroup,
   onUpdate,
@@ -2144,6 +2261,8 @@ function AmbassadorsView({
 }: {
   data: DashboardData;
   ambassadors: DashboardData["ambassadors"];
+  pagination: DashboardData["ambassadorPagination"];
+  onPageChange: (page: number) => void;
   filters: React.ReactNode;
   onViewGroup: (id: string) => void;
   onUpdate: DashboardUpdater;
@@ -2499,6 +2618,13 @@ function AmbassadorsView({
           />
         )}
       </div>
+      <Pagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        totalRows={pagination.totalRows}
+        pageSize={pagination.pageSize}
+        onPageChange={onPageChange}
+      />
       {shareTarget && (
         <div className="modal-backdrop share-draft-backdrop" role="presentation">
           <section

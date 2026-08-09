@@ -45,9 +45,56 @@ const sql = postgres(databaseUrl, {
 });
 
 try {
+  await sql.unsafe(`
+    create table if not exists public.schema_migrations (
+      filename text primary key,
+      applied_at timestamptz not null default now()
+    )
+  `);
+
+  const [{ existing_schema: existingSchema }] = await sql<
+    Array<{ existing_schema: boolean }>
+  >`select to_regclass('public.profiles') is not null as existing_schema`;
+  const [{ applied_count: appliedCount }] = await sql<
+    Array<{ applied_count: number }>
+  >`select count(*)::integer as applied_count from public.schema_migrations`;
+
+  // This project predates migration tracking. On its first tracked run, the
+  // existing production schema already represents every historical migration;
+  // baseline those files and apply only the newest migration. Fresh databases
+  // still execute the complete migration sequence.
+  if (existingSchema && appliedCount === 0 && migrationFiles.length > 1) {
+    const historicalFiles = migrationFiles.slice(0, -1);
+    await sql.begin(async (transaction) => {
+      for (const filename of historicalFiles) {
+        await transaction`
+          insert into public.schema_migrations (filename)
+          values (${filename})
+          on conflict (filename) do nothing
+        `;
+      }
+    });
+    console.log(`Baselined ${historicalFiles.length} existing migrations.`);
+  }
+
+  const appliedRows = await sql<Array<{ filename: string }>>`
+    select filename from public.schema_migrations
+  `;
+  const applied = new Set(appliedRows.map((row) => row.filename));
+
   for (const file of migrationFiles) {
+    if (applied.has(file)) {
+      console.log(`Skipped ${file} (already applied).`);
+      continue;
+    }
     const migration = await fs.readFile(path.join(migrationsPath, file), "utf8");
-    await sql.unsafe(migration);
+    await sql.begin(async (transaction) => {
+      await transaction.unsafe(migration);
+      await transaction`
+        insert into public.schema_migrations (filename)
+        values (${file})
+      `;
+    });
     console.log(`Applied ${file}.`);
   }
   console.log("Supabase migrations applied successfully.");

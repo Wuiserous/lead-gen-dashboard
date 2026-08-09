@@ -6,10 +6,19 @@ export class WatiApiError extends Error {
     public readonly status: number | null,
     public readonly retryable: boolean,
     public readonly responseBody = "",
+    public readonly retryAfterMs: number | null = null,
   ) {
     super(message);
     this.name = "WatiApiError";
   }
+}
+
+function retryAfterMilliseconds(value: string | null) {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
 }
 
 type WatiResponse = Record<string, unknown>;
@@ -66,6 +75,7 @@ async function watiRequest(path: string, body: unknown, method = "POST") {
       response.status,
       response.status === 408 || response.status === 429 || response.status >= 500,
       text.slice(0, 2_000),
+      retryAfterMilliseconds(response.headers.get("retry-after")),
     );
   }
 

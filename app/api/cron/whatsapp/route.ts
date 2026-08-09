@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { dispatchEmailJobs } from "@/lib/email/dispatch";
 import { cronSecret } from "@/lib/env";
+import { createAdminSupabase } from "@/lib/supabase/admin";
 import { dispatchWhatsAppJobs } from "@/lib/whatsapp/dispatch";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +13,15 @@ async function run(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
   try {
-    const [whatsapp, email] = await Promise.allSettled([
+    const [whatsapp, email, cleanup] = await Promise.allSettled([
       dispatchWhatsAppJobs({ limit: 50 }),
       dispatchEmailJobs({ limit: 50 }),
+      createAdminSupabase().rpc("cleanup_communication_events", {
+        p_webhook_retention_days: 30,
+        p_activity_retention_days: 14,
+      }),
     ]);
-    const failures = [whatsapp, email].filter(
+    const failures = [whatsapp, email, cleanup].filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
     failures.forEach((failure) =>
@@ -25,6 +30,7 @@ async function run(request: Request) {
     return NextResponse.json({
       whatsapp: whatsapp.status === "fulfilled" ? whatsapp.value : null,
       email: email.status === "fulfilled" ? email.value : null,
+      cleanup: cleanup.status === "fulfilled" ? cleanup.value.data : null,
       failedDispatchers: failures.length,
     }, {
       headers: { "Cache-Control": "no-store" },

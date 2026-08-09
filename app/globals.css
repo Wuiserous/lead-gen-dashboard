@@ -1054,15 +1054,30 @@
   font-weight: 750;
 }
 
-.reporting-filters select {
+.reporting-filters select,
+.reporting-filters input {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 0 34px 0 11px;
+  padding: 0 11px;
   background: var(--surface);
   color: var(--ink);
   outline: none;
+}
+
+.reporting-filters select {
+  padding-right: 34px;
+}
+
+.reporting-filters input:focus,
+.reporting-filters select:focus {
+  border-color: var(--navy-2);
+  box-shadow: 0 0 0 3px rgba(21, 67, 128, 0.08);
+}
+
+.group-filter-control {
+  min-width: 230px !important;
 }
 
 .lead-view-summary {

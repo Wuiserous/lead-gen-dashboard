@@ -149,6 +149,15 @@ export type DashboardPagination = {
   totalPages: number;
 };
 
+export type GroupOption = {
+  id: string;
+  name: string;
+  college: string;
+  sales_id: string;
+  team_id: string;
+  created_at: string;
+};
+
 export type DashboardData = {
   user: Profile;
   defaultTarget: number;
@@ -156,9 +165,11 @@ export type DashboardData = {
   employees: Profile[];
   salesPerformance: SalesPerformance[];
   ambassadors: AmbassadorPerformance[];
+  rankingAmbassadors: AmbassadorPerformance[];
   registrations: Registration[];
   summary: DashboardSummary;
   pagination: DashboardPagination;
+  ambassadorPagination: DashboardPagination;
 };
 
 export type DashboardActivityEvent = {
@@ -180,6 +191,7 @@ export type DashboardLiveUpdate = {
   salesPerformance: SalesPerformance | null;
   summary: DashboardSummary | null;
   pagination: DashboardPagination | null;
+  ambassadorPagination: DashboardPagination | null;
 };
 
 export type AdminStatistics = {

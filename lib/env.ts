@@ -36,6 +36,13 @@ function optional(value: string | undefined) {
   return normalized || null;
 }
 
+function boundedInteger(value: string | undefined, fallback: number, maximum: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0
+    ? Math.min(parsed, maximum)
+    : fallback;
+}
+
 export function watiEnv() {
   return {
     endpoint: optional(process.env.WATI_API_ENDPOINT)?.replace(/\/$/, "") ?? null,
@@ -50,6 +57,11 @@ export function watiEnv() {
     finalReminderTemplate:
       optional(process.env.WATI_FINAL_REMINDER_TEMPLATE) ??
       "persevex_lead_final_reminder_v1",
+    dispatchConcurrency: boundedInteger(
+      process.env.WATI_DISPATCH_CONCURRENCY,
+      4,
+      10,
+    ),
   };
 }
 
@@ -68,6 +80,11 @@ export function resendEnv() {
     fromEmail: optional(process.env.RESEND_FROM_EMAIL),
     replyTo: optional(process.env.RESEND_REPLY_TO),
     webhookSecret: optional(process.env.RESEND_WEBHOOK_SECRET),
+    dispatchConcurrency: boundedInteger(
+      process.env.RESEND_DISPATCH_CONCURRENCY,
+      8,
+      20,
+    ),
   };
 }
 
