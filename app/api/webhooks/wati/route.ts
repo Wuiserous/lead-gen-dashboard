@@ -1,10 +1,11 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 type WatiWebhook = Record<string, unknown>;
 type WebhookProcessResult = {
@@ -347,15 +348,17 @@ export async function POST(request: Request) {
 
   try {
     const result = await processWebhook(payload, rawBody);
-    after(async () => {
-      if (!result.immediateJobId) return;
+    let replyDispatched = false;
+    if (result.immediateJobId) {
       try {
-        await dispatchWhatsAppJob(result.immediateJobId);
+        const dispatch = await dispatchWhatsAppJob(result.immediateJobId);
+        replyDispatched = dispatch.completed > 0;
       } catch (dispatchError) {
+        // The job stays in the durable queue and the cron worker retries it.
         console.error("Immediate inbound WhatsApp dispatch failed", dispatchError);
       }
-    });
-    return NextResponse.json({ ok: true, ...result });
+    }
+    return NextResponse.json({ ok: true, ...result, replyDispatched });
   } catch (error) {
     console.error("WATI webhook processing failed", error);
     return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });

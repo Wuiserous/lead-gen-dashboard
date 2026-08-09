@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { createAdminSupabase } from "@/lib/supabase/admin";
@@ -7,6 +7,7 @@ import { cleanText } from "@/lib/validation";
 import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -189,12 +190,13 @@ export async function POST(
     entity_id: registrationId,
   });
 
-  after(async () => {
-    try {
-      await dispatchWhatsAppJob(queuedJob.id);
-    } catch (dispatchError) {
-      console.error("Manual WhatsApp dispatch failed", dispatchError);
-    }
-  });
-  return NextResponse.json({ queued: true }, { status: 202 });
+  let sent = false;
+  try {
+    const dispatch = await dispatchWhatsAppJob(queuedJob.id);
+    sent = dispatch.completed > 0;
+  } catch (dispatchError) {
+    // The durable job remains available to the cron retry worker.
+    console.error("Manual WhatsApp dispatch failed", dispatchError);
+  }
+  return NextResponse.json({ queued: true, sent }, { status: sent ? 200 : 202 });
 }
