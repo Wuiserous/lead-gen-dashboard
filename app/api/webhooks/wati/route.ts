@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
+import { deriveWatiLeadAnalytics } from "@/lib/whatsapp/lead-analytics";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -358,8 +359,24 @@ async function processWebhook(
       });
     if (messageError) throw new Error("Unable to store the incoming WhatsApp message.");
 
+    const { data: inboundMessages, error: inboundMessagesError } = await admin
+      .from("whatsapp_messages")
+      .select("body")
+      .eq("conversation_id", conversation.id)
+      .eq("direction", "inbound")
+      .order("sent_at", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true });
+    if (inboundMessagesError) {
+      throw new Error("Unable to calculate the WhatsApp lead score.");
+    }
+    const analytics = deriveWatiLeadAnalytics(
+      (inboundMessages ?? []).map((message: { body: string }) => message.body),
+      conversation,
+    );
+
     const updatedConversation = {
       ...conversation,
+      ...analytics,
       wati_conversation_id:
         stringValue(payload.conversationId) || conversation.wati_conversation_id,
       wati_ticket_id: stringValue(payload.ticketId) || conversation.wati_ticket_id,
@@ -367,12 +384,6 @@ async function processWebhook(
       conversation_window_expires_at: new Date(
         Date.parse(lastInboundAt) + 24 * 60 * 60 * 1000,
       ).toISOString(),
-      state: ["queued", "sent", "delivered", "read", "not_started", "failed"].includes(
-        conversation.state,
-      )
-        ? "engaged"
-        : conversation.state,
-      lead_score: Math.min(100, Math.max(conversation.lead_score, 15)),
       last_message_status: "received",
       last_error: null,
     };
@@ -385,6 +396,12 @@ async function processWebhook(
         conversation_window_expires_at: updatedConversation.conversation_window_expires_at,
         state: updatedConversation.state,
         lead_score: updatedConversation.lead_score,
+        urgency: updatedConversation.urgency,
+        flow_step: updatedConversation.flow_step,
+        study_stage: updatedConversation.study_stage,
+        experience_level: updatedConversation.experience_level,
+        primary_goal: updatedConversation.primary_goal,
+        bot_paused: employeeWatiEnabled ? updatedConversation.bot_paused : true,
         last_message_status: "received",
         last_error: null,
       })

@@ -12,10 +12,12 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "npm run lint && npm run typecheck && npm run build",
+    "test": "npm run lint && npm run typecheck && npm run test:whatsapp-score && npm run build",
+    "test:whatsapp-score": "tsx scripts/verify-wati-lead-scoring.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:verify-whatsapp": "tsx scripts/verify-whatsapp.ts",
     "db:backfill-wati": "tsx scripts/backfill-wati-outbound.ts",
+    "db:backfill-wati-scores": "tsx scripts/backfill-wati-lead-scores.ts",
     "bootstrap:admin": "tsx scripts/bootstrap-admin.ts"
   },
   "dependencies": {
