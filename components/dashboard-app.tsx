@@ -2377,7 +2377,7 @@ function AmbassadorsView({
         {ambassadors.map((ambassador) => {
           const pending = ambassador.id.startsWith("pending-");
           const link = `${publicBaseUrl()}/join/${ambassador.public_slug}`;
-          const progressLink = `${publicBaseUrl()}/ca/${ambassador.progress_key}`;
+          const progressLink = `${publicBaseUrl()}/ca/${ambassador.progress_key}?share=progress-v1`;
           const referralCopied = copyFeedback === `${ambassador.id}:referral`;
           const progressCopied = copyFeedback === `${ambassador.id}:progress`;
           const percentage = Math.min(
