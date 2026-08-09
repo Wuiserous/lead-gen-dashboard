@@ -32,7 +32,7 @@ export async function GET(
     .maybeSingle();
   if (!ambassador) return errorResponse("Progress link not found.", 404);
 
-  const [registrationResult, convertedResult] = await Promise.all([
+  const [registrationResult, convertedResult, leaderboardResult] = await Promise.all([
     admin
       .from("registrations")
       .select("id,name,preferred_domain,status,created_at,updated_at", {
@@ -47,8 +47,11 @@ export async function GET(
       .select("id", { count: "exact", head: true })
       .eq("ambassador_id", progress.ambassador_id)
       .eq("status", "converted"),
+    admin.rpc("public_ca_leaderboard", {
+      p_ambassador_id: progress.ambassador_id,
+    }),
   ]);
-  if (registrationResult.error || convertedResult.error) {
+  if (registrationResult.error || convertedResult.error || leaderboardResult.error) {
     return errorResponse("Unable to load registrations.", 500);
   }
 
@@ -60,6 +63,11 @@ export async function GET(
       registration_total: registrationResult.count ?? 0,
       converted_count: convertedResult.count ?? 0,
       visible_limit: limit,
+      leaderboard: leaderboardResult.data ?? {
+        top: [],
+        current: null,
+        totalCompetitors: 0,
+      },
     },
     { headers: { "Cache-Control": "no-store" } },
   );

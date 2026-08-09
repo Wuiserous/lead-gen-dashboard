@@ -194,6 +194,53 @@ export type DashboardLiveUpdate = {
   ambassadorPagination: DashboardPagination | null;
 };
 
+export type LeaderboardPeriod = "day" | "week" | "month" | "year";
+
+export type EmployeeLeaderboardEntry = {
+  id: string;
+  name: string;
+  role: "sales" | "team_lead";
+  teamId: string | null;
+  teamName: string | null;
+  rank: number;
+  previousRank: number | null;
+  registrations: number;
+  conversions: number;
+  conversionRate: number;
+  score: number;
+};
+
+export type TeamLeaderboardEntry = {
+  id: string;
+  name: string;
+  rank: number;
+  previousRank: number | null;
+  activeMembers: number;
+  registrations: number;
+  conversions: number;
+  score: number;
+  averageScore: number;
+};
+
+export type PerformanceLeaderboard = {
+  period: LeaderboardPeriod;
+  periodStart: string;
+  generatedAt: string;
+  employees: EmployeeLeaderboardEntry[];
+  teams: TeamLeaderboardEntry[];
+};
+
+export type CampusLeaderboardEntry = {
+  id: string;
+  name: string;
+  college: string;
+  rank: number;
+  registrations: number;
+  conversions: number;
+  target: number;
+  qualified: boolean;
+};
+
 export type AdminStatistics = {
   overview: {
     registrations: number;

@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Target,
   Trash2,
+  Trophy,
   Upload,
   UserPlus,
   Users,
@@ -47,6 +48,7 @@ import {
   peekDashboardBootstrap,
 } from "@/lib/dashboard-bootstrap";
 import { buildWhatsAppDraft, shareCreatives } from "@/lib/share-creatives";
+import { PerformanceLeaderboard } from "@/components/performance-leaderboard";
 import type {
   AmbassadorPerformance,
   AppRole,
@@ -62,7 +64,7 @@ import type {
   WhatsAppMessage,
 } from "@/lib/types";
 
-type Tab = "overview" | "teams" | "employees" | "ambassadors" | "leads";
+type Tab = "overview" | "leaderboard" | "teams" | "employees" | "ambassadors" | "leads";
 type ModalName = "team" | "employee" | "import" | "ambassador" | null;
 type DateRange = ReportingDateRange;
 type ExportScope = "current" | "group" | "all";
@@ -815,6 +817,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
 
   const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
     { id: "overview", label: "Overview", icon: <LayoutDashboard size={18} /> },
+    { id: "leaderboard", label: "Leaderboard", icon: <Trophy size={18} /> },
     ...(data.user.role === "admin"
       ? [{ id: "teams" as Tab, label: "Teams", icon: <Building2 size={18} /> }]
       : []),
@@ -1003,6 +1006,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
               onUpdate={updateDashboard}
               onReconcile={scheduleReconciliation}
             />
+          )}
+          {tab === "leaderboard" && (
+            <PerformanceLeaderboard currentUserId={data.user.id} />
           )}
           {tab === "teams" && (
             <TeamsView
@@ -1419,6 +1425,7 @@ function pageTitle(tab: Tab, role: AppRole) {
         ? "Team performance"
         : "Your lead generation";
   }
+  if (tab === "leaderboard") return "Performance leaderboard";
   if (tab === "teams") return "Teams";
   if (tab === "employees") return role === "admin" ? "Employees" : "Team members";
   if (tab === "ambassadors") return "Groups & Campus Ambassadors";

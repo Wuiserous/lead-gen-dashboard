@@ -1,17 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Award,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
   RefreshCw,
+  Trophy,
   Target,
   Users,
 } from "lucide-react";
 import Image from "next/image";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import type { CampusLeaderboardEntry } from "@/lib/types";
 
 type ProgressData = {
   ambassador_id: string;
@@ -36,6 +38,11 @@ type ProgressData = {
   registration_total: number;
   converted_count: number;
   visible_limit: number;
+  leaderboard: {
+    top: CampusLeaderboardEntry[];
+    current: CampusLeaderboardEntry | null;
+    totalCompetitors: number;
+  };
 };
 
 export function CampusProgress({ progressKey }: { progressKey: string }) {
@@ -43,6 +50,7 @@ export function CampusProgress({ progressKey }: { progressKey: string }) {
   const [error, setError] = useState("");
   const [live, setLive] = useState(false);
   const [limit, setLimit] = useState(50);
+  const refreshTimer = useRef<number | undefined>(undefined);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/public/progress/${progressKey}?limit=${limit}`, {
@@ -60,7 +68,7 @@ export function CampusProgress({ progressKey }: { progressKey: string }) {
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void load(), 0);
     const supabase = createBrowserSupabase();
-    const channel = supabase
+    const progressChannel = supabase
       .channel(`progress-${progressKey}`)
       .on(
         "postgres_changes",
@@ -73,9 +81,18 @@ export function CampusProgress({ progressKey }: { progressKey: string }) {
         () => void load(),
       )
       .subscribe((status: string) => setLive(status === "SUBSCRIBED"));
+    const leaderboardChannel = supabase
+      .channel("leaderboard:campus")
+      .on("broadcast", { event: "ranking_changed" }, () => {
+        if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+        refreshTimer.current = window.setTimeout(() => void load(), 350);
+      })
+      .subscribe();
     return () => {
       window.clearTimeout(initialLoad);
-      void supabase.removeChannel(channel);
+      if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+      void supabase.removeChannel(progressChannel);
+      void supabase.removeChannel(leaderboardChannel);
     };
   }, [load, progressKey]);
 
@@ -164,6 +181,11 @@ export function CampusProgress({ progressKey }: { progressKey: string }) {
             </div>
           )}
         </div>
+        <CampusLeaderboard
+          entries={data.leaderboard.top}
+          current={data.leaderboard.current}
+          total={data.leaderboard.totalCompetitors}
+        />
         <section className="progress-leads-card">
           <div className="progress-leads-header">
             <div>
@@ -229,5 +251,74 @@ export function CampusProgress({ progressKey }: { progressKey: string }) {
         </p>
       </section>
     </main>
+  );
+}
+
+function CampusLeaderboard({
+  entries,
+  current,
+  total,
+}: {
+  entries: CampusLeaderboardEntry[];
+  current: CampusLeaderboardEntry | null;
+  total: number;
+}) {
+  const currentIsVisible = current
+    ? entries.some((entry) => entry.id === current.id)
+    : false;
+
+  return (
+    <section className="ca-leaderboard-card">
+      <div className="ca-leaderboard-head">
+        <div>
+          <span className="eyebrow">TOP CAMPUS AMBASSADORS</span>
+          <h2>Campus leaderboard</h2>
+          <p>See how your registrations compare across colleges.</p>
+        </div>
+        <span className="ca-leaderboard-count"><Trophy size={16} /> {total} competing</span>
+      </div>
+
+      {current && (
+        <div className="ca-personal-standing">
+          <span>Your position</span>
+          <strong>#{current.rank}</strong>
+          <p>{current.registrations} registrations · {current.conversions} converted</p>
+        </div>
+      )}
+
+      <div className="ca-leaderboard-list">
+        {entries.map((entry) => {
+          const isCurrent = entry.id === current?.id;
+          return (
+            <article className={`ca-leaderboard-row ${isCurrent ? "current" : ""}`} key={entry.id}>
+              <span className={`ca-rank rank-${entry.rank}`}>#{entry.rank}</span>
+              <span className="progress-lead-avatar">{entry.name.trim().slice(0, 1).toUpperCase()}</span>
+              <div>
+                <strong>{entry.name}{isCurrent ? " · You" : ""}</strong>
+                <small>{entry.college}</small>
+              </div>
+              <p><strong>{entry.registrations}</strong><span>registrations</span></p>
+              {entry.qualified && <span className="ca-qualified"><Award size={13} /> Qualified</span>}
+            </article>
+          );
+        })}
+        {!entries.length && (
+          <div className="progress-leads-empty">
+            <Trophy size={25} />
+            <strong>The first position is waiting</strong>
+            <p>Your first valid registration puts you on the leaderboard.</p>
+          </div>
+        )}
+      </div>
+
+      {current && !currentIsVisible && (
+        <article className="ca-leaderboard-row current personal-outside-top">
+          <span className="ca-rank">#{current.rank}</span>
+          <span className="progress-lead-avatar">{current.name.trim().slice(0, 1).toUpperCase()}</span>
+          <div><strong>{current.name} · You</strong><small>{current.college}</small></div>
+          <p><strong>{current.registrations}</strong><span>registrations</span></p>
+        </article>
+      )}
+    </section>
   );
 }
