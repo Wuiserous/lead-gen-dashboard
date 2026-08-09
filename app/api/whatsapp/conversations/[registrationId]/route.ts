@@ -65,7 +65,9 @@ export async function GET(
       "id,direction,message_type,body,intent,template_name,status,error_detail,created_at",
     )
     .eq("conversation_id", scoped.conversation.id)
+    .order("sent_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(100);
   if (error) return errorResponse("Unable to load WhatsApp messages.", 500);
 

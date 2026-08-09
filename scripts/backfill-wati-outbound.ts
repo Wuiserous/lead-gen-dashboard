@@ -24,6 +24,44 @@ const sql = postgres(configured.toString(), {
 });
 
 try {
+  const correctedInbound = await sql<{ id: string; conversation_id: string }[]>`
+    with inbound_events as (
+      select distinct on (payload->>'whatsappMessageId')
+        payload->>'whatsappMessageId' as whatsapp_message_id,
+        case
+          when coalesce(payload->>'created', '') ~ '^\\d{4}-\\d{2}-\\d{2}T'
+            then (payload->>'created')::timestamptz
+          when coalesce(payload->>'timestamp', '') ~ '^\\d+(\\.\\d+)?$'
+            then to_timestamp(
+              case
+                when (payload->>'timestamp')::numeric > 10000000000
+                  then (payload->>'timestamp')::numeric / 1000
+                else (payload->>'timestamp')::numeric
+              end
+            )
+          else created_at
+        end as occurred_at
+      from public.whatsapp_webhook_events
+      where nullif(payload->>'whatsappMessageId', '') is not null
+        and (
+          lower(coalesce(payload->>'owner', '')) = 'false'
+          or lower(coalesce(payload->>'eventType', '')) in ('message', 'messagereceived')
+        )
+      order by payload->>'whatsappMessageId', created_at
+    )
+    update public.whatsapp_messages message
+    set sent_at = event.occurred_at,
+        created_at = event.occurred_at
+    from inbound_events event
+    where message.direction = 'inbound'
+      and message.whatsapp_message_id = event.whatsapp_message_id
+      and (
+        message.sent_at is distinct from event.occurred_at
+        or message.created_at is distinct from event.occurred_at
+      )
+    returning message.id, message.conversation_id
+  `;
+
   const inserted = await sql<{ conversation_id: string }[]>`
     with matched_events as (
       select
@@ -156,7 +194,12 @@ try {
     returning conversation_id
   `;
 
-  const conversationIds = [...new Set(inserted.map((row) => row.conversation_id))];
+  const conversationIds = [
+    ...new Set([
+      ...inserted.map((row) => row.conversation_id),
+      ...correctedInbound.map((row) => row.conversation_id),
+    ]),
+  ];
   if (conversationIds.length) {
     await sql`
       update public.whatsapp_conversations c
@@ -173,6 +216,19 @@ try {
         where conversation_id in ${sql(conversationIds)}
           and direction = 'outbound'
         order by conversation_id, created_at desc
+      ) latest
+      where c.id = latest.conversation_id
+    `;
+
+    await sql`
+      update public.whatsapp_conversations c
+      set last_inbound_at = latest.last_inbound_at
+      from (
+        select conversation_id, max(sent_at) as last_inbound_at
+        from public.whatsapp_messages
+        where conversation_id in ${sql(conversationIds)}
+          and direction = 'inbound'
+        group by conversation_id
       ) latest
       where c.id = latest.conversation_id
     `;
@@ -199,6 +255,7 @@ try {
   console.log(
     JSON.stringify({
       insertedMessages: inserted.length,
+      correctedInboundMessages: correctedInbound.length,
       refreshedConversations: conversationIds.length,
     }),
   );

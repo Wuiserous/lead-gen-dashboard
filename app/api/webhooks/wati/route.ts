@@ -337,7 +337,12 @@ async function processWebhook(
 
     const body = replyText(payload);
     const messageType = stringValue(payload.type || "text").toLowerCase();
-    const now = new Date();
+    const occurredAt = payloadTimestamp(payload);
+    const lastInboundAt =
+      !conversation.last_inbound_at ||
+      Date.parse(occurredAt) > Date.parse(conversation.last_inbound_at)
+        ? occurredAt
+        : conversation.last_inbound_at;
     const { error: messageError } = await admin
       .from("whatsapp_messages")
       .insert({
@@ -348,7 +353,8 @@ async function processWebhook(
         body,
         whatsapp_message_id: whatsappMessageId,
         status: "received",
-        sent_at: now.toISOString(),
+        sent_at: occurredAt,
+        created_at: occurredAt,
       });
     if (messageError) throw new Error("Unable to store the incoming WhatsApp message.");
 
@@ -357,9 +363,9 @@ async function processWebhook(
       wati_conversation_id:
         stringValue(payload.conversationId) || conversation.wati_conversation_id,
       wati_ticket_id: stringValue(payload.ticketId) || conversation.wati_ticket_id,
-      last_inbound_at: now.toISOString(),
+      last_inbound_at: lastInboundAt,
       conversation_window_expires_at: new Date(
-        now.getTime() + 24 * 60 * 60 * 1000,
+        Date.parse(lastInboundAt) + 24 * 60 * 60 * 1000,
       ).toISOString(),
       state: ["queued", "sent", "delivered", "read", "not_started", "failed"].includes(
         conversation.state,
