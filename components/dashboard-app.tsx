@@ -1008,7 +1008,10 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
             />
           )}
           {tab === "leaderboard" && (
-            <PerformanceLeaderboard currentUserId={data.user.id} />
+            <PerformanceLeaderboard
+              currentUserId={data.user.id}
+              currentUserRole={data.user.role}
+            />
           )}
           {tab === "teams" && (
             <TeamsView
