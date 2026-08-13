@@ -36,7 +36,7 @@ export async function PATCH(
   if (user.role === "sales") {
     updateQuery = updateQuery.eq("owner_sales_id", user.id);
   } else if (user.role === "team_lead") {
-    updateQuery = updateQuery.eq("owner_team_id", user.team_id);
+    updateQuery = updateQuery.in("owner_team_id", user.managed_team_ids);
   }
   const { data: lead, error } = await updateQuery
     .select("id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,ambassador_id,status,note,updated_at")
@@ -100,7 +100,7 @@ export async function DELETE(
     .delete()
     .eq("id", id);
   if (user.role === "team_lead") {
-    deleteQuery = deleteQuery.eq("owner_team_id", user.team_id);
+    deleteQuery = deleteQuery.in("owner_team_id", user.managed_team_ids);
   }
   const { data: lead, error } = await deleteQuery
     .select("id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,ambassador_id")

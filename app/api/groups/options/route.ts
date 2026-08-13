@@ -4,6 +4,7 @@ import { errorResponse } from "@/lib/http";
 import { reportingRangeStart } from "@/lib/reporting-date";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import type { GroupOption } from "@/lib/types";
+import { resolveOperationalTeam } from "@/lib/team-access";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,11 @@ export async function GET(request: Request) {
   const startAt = reportingRangeStart(params.get("dateRange"))?.toISOString() ?? null;
 
   if (user.role === "team_lead") {
-    if (!user.team_id) return errorResponse("No team is assigned.", 409);
-    teamId = user.team_id;
+    if (!user.managed_team_ids.length) return errorResponse("No team is assigned.", 409);
+    if (teamId && !user.managed_team_ids.includes(teamId)) {
+      return errorResponse("You are not assigned to this team.", 403);
+    }
+    teamId = resolveOperationalTeam(user, teamId);
   } else if (user.role === "sales") {
     teamId = user.team_id;
     memberId = user.id;

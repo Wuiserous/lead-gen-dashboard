@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { createAdminSupabase } from "@/lib/supabase/admin";
+import { canManageTeam } from "@/lib/team-access";
 
 export async function PATCH(
   request: Request,
@@ -38,7 +39,7 @@ export async function PATCH(
   if (user.role === "sales") {
     updateQuery = updateQuery.eq("sales_id", user.id);
   } else if (user.role === "team_lead") {
-    updateQuery = updateQuery.eq("team_id", user.team_id);
+    updateQuery = updateQuery.in("team_id", user.managed_team_ids);
   }
   const { data, error } = await updateQuery
     .select("id,sales_id,team_id,status,progress_key,target")
@@ -80,7 +81,7 @@ export async function DELETE(
     .maybeSingle();
   if (!ambassador) return errorResponse("Campus Ambassador not found.", 404);
 
-  if (user.role === "team_lead" && ambassador.team_id !== user.team_id) {
+  if (user.role === "team_lead" && !canManageTeam(user, ambassador.team_id)) {
     return errorResponse("Unauthorized.", 403);
   }
 

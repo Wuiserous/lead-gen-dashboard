@@ -229,7 +229,11 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [sidebar, setSidebar] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [teamFilter, setTeamFilter] = useState("all");
+  const [teamFilter, setTeamFilter] = useState(
+    initialData?.user.role === "team_lead"
+      ? (initialData.activeTeamId ?? initialData.user.team_id ?? "all")
+      : "all",
+  );
   const [groupFilter, setGroupFilter] = useState("all");
   const [memberFilter, setMemberFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
@@ -348,6 +352,13 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
             : "/sales",
       );
       return;
+    }
+    if (
+      result.user.role === "team_lead" &&
+      teamFilter === "all" &&
+      result.activeTeamId
+    ) {
+      setTeamFilter(result.activeTeamId);
     }
     setData((current) => {
       if (!current || revisionAtStart === dataRevision.current) return result;
@@ -521,9 +532,13 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
         employees = employees.filter((item) => item.id !== update.event.entity_id);
       }
       if (update.profile) {
+        const previousProfile = employees.find((item) => item.id === update.profile?.id);
+        update.profile.managed_team_ids =
+          previousProfile?.managed_team_ids ?? update.profile.managed_team_ids ??
+          (update.profile.team_id ? [update.profile.team_id] : []);
         const profileIsVisible =
           current.user.role === "admin" ||
-          update.profile.team_id === current.user.team_id;
+          update.profile.team_id === current.activeTeamId;
         employees = profileIsVisible
           ? upsertById(employees, update.profile).sort(
               (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at),
@@ -931,6 +946,27 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
             <h1>{pageTitle(tab, data.user.role)}</h1>
           </div>
           <div className="header-actions">
+            {data.user.role === "team_lead" && data.teams.length > 0 && (
+              <label className="team-workspace-switcher">
+                <Building2 size={16} />
+                <span>Managing</span>
+                <select
+                  value={teamFilter}
+                  aria-label="Choose team to manage"
+                  onChange={(event) => {
+                    setTeamFilter(event.target.value);
+                    setMemberFilter("all");
+                    setGroupFilter("all");
+                    setPage(1);
+                    setAmbassadorPage(1);
+                  }}
+                >
+                  {data.teams.map((team) => (
+                    <option key={team.id} value={team.id}>{team.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <span className={`live-pill ${live ? "connected" : ""}`}>
               <i /> {live ? "Live" : "Connecting"}
             </span>
@@ -1336,6 +1372,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
           {modal === "ambassador" && (
             <AmbassadorForm
               user={data.user}
+              teamId={data.activeTeamId ?? data.user.team_id}
               target={data.defaultTarget}
               onPending={(ambassador) => {
                 setModal(null);
@@ -1573,7 +1610,11 @@ function ReportingFilters({
   const creators = data.employees.filter(
     (employee) =>
       (employee.role === "sales" || employee.role === "team_lead") &&
-      (teamFilter === "all" || employee.team_id === teamFilter) &&
+      (
+        teamFilter === "all" ||
+        employee.team_id === teamFilter ||
+        employee.managed_team_ids.includes(teamFilter)
+      ) &&
       (data.salesPerformance.find((item) => item.id === employee.id)
         ?.ambassador_count ?? 0) > 0,
   );
@@ -1854,11 +1895,14 @@ function TeamsView({
   onUpdate: DashboardUpdater;
   onReconcile: () => void;
 }) {
-  const teamLeadByTeam = new Map(
-    data.employees
-      .filter((employee) => employee.role === "team_lead")
-      .map((employee) => [employee.team_id, employee]),
-  );
+  const teamLeadByTeam = new Map<string, Profile>();
+  data.employees
+    .filter((employee) => employee.role === "team_lead")
+    .forEach((employee) => {
+      for (const teamId of employee.managed_team_ids) {
+        teamLeadByTeam.set(teamId, employee);
+      }
+    });
   async function toggleTeam(id: string, active: boolean) {
     onUpdate((current) => ({
       ...current,
@@ -1915,7 +1959,7 @@ function TeamsView({
       <div className="table-toolbar">
         <div>
           <h2>Organization teams</h2>
-          <p>Create teams, then assign one Team Lead and Sales members.</p>
+          <p>Create teams, assign Sales members, and let one Team Lead manage one or several teams.</p>
         </div>
       </div>
       <div className="card-grid">
@@ -1998,6 +2042,13 @@ function EmployeesView({
       body.role === "sales" || body.role === "team_lead"
         ? body.role
         : previous.role;
+    const nextManagedTeamIds = nextRole === "team_lead"
+      ? (
+          Array.isArray(body.teamIds)
+            ? body.teamIds.filter((value): value is string => typeof value === "string")
+            : previous.managed_team_ids
+        )
+      : (nextTeamId ? [nextTeamId] : []);
     const teamChanged = nextTeamId !== previous.team_id;
     const ambassadorCount = previousPerformance?.ambassador_count ?? 0;
     onUpdate((current) => ({
@@ -2012,6 +2063,7 @@ function EmployeesView({
               ...(body.role === "sales" || body.role === "team_lead"
                 ? { role: body.role }
                 : {}),
+              managed_team_ids: nextManagedTeamIds,
               ...(typeof body.watiEnabled === "boolean"
                 ? { wati_enabled: body.watiEnabled }
                 : {}),
@@ -2113,6 +2165,23 @@ function EmployeesView({
       return;
     }
     onReconcile();
+  }
+
+  function changeManagedTeam(employee: Profile, teamId: string, checked: boolean) {
+    const current = employee.managed_team_ids.length
+      ? employee.managed_team_ids
+      : (employee.team_id ? [employee.team_id] : []);
+    const teamIds = checked
+      ? [...new Set([...current, teamId])]
+      : current.filter((id) => id !== teamId);
+    if (!teamIds.length) {
+      window.alert("A Team Lead must manage at least one team.");
+      return;
+    }
+    const primaryTeamId = teamIds.includes(employee.team_id ?? "")
+      ? employee.team_id
+      : teamIds[0];
+    void patchEmployee(employee.id, { teamId: primaryTeamId, teamIds });
   }
 
   async function removeEmployee(id: string, name: string) {
@@ -2222,20 +2291,53 @@ function EmployeesView({
                 <span className="role-tag">{roleLabel(employee.role)}</span>
               )}
               {data.user.role === "admin" && employee.role !== "admin" ? (
-                <select
-                  value={employee.team_id ?? ""}
-                  disabled={pending}
-                  onChange={(event) =>
-                    void patchEmployee(employee.id, { teamId: event.target.value })
-                  }
-                >
-                  <option value="" disabled>Select team</option>
-                  {data.teams.map((team) => (
-                    <option key={team.id} value={team.id}>{team.name}</option>
-                  ))}
-                </select>
+                employee.role === "team_lead" ? (
+                  <details className="team-assignment-menu">
+                    <summary>
+                      {employee.managed_team_ids.length || 1} team{(employee.managed_team_ids.length || 1) === 1 ? "" : "s"}
+                    </summary>
+                    <div>
+                      <strong>Teams managed</strong>
+                      {data.teams.map((team) => {
+                        const checked = employee.managed_team_ids.includes(team.id) ||
+                          (!employee.managed_team_ids.length && employee.team_id === team.id);
+                        return (
+                          <label key={team.id}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={pending}
+                              onChange={(event) =>
+                                changeManagedTeam(employee, team.id, event.target.checked)
+                              }
+                            />
+                            <span>{team.name}</span>
+                            {employee.team_id === team.id && <small>Primary</small>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </details>
+                ) : (
+                  <select
+                    value={employee.team_id ?? ""}
+                    disabled={pending}
+                    onChange={(event) =>
+                      void patchEmployee(employee.id, { teamId: event.target.value })
+                    }
+                  >
+                    <option value="" disabled>Select team</option>
+                    {data.teams.map((team) => (
+                      <option key={team.id} value={team.id}>{team.name}</option>
+                    ))}
+                  </select>
+                )
               ) : (
-                <span>{employee.team_id ? teamNames.get(employee.team_id) : "All teams"}</span>
+                <span>
+                  {employee.role === "team_lead" && employee.managed_team_ids.length > 1
+                    ? `${employee.managed_team_ids.length} managed teams`
+                    : employee.team_id ? teamNames.get(employee.team_id) : "All teams"}
+                </span>
               )}
               <span className={`status-dot ${employee.active ? "active" : ""}`}>
                 {pending ? "Creating" : employee.active ? "Active" : "Suspended"}
@@ -3296,7 +3398,7 @@ function EmployeeForm({
   onFailed: (employee: Profile, message: string) => void;
 }) {
   const [form, setForm] = useState({
-    fullName: "", email: "", phone: "", role: "sales", teamId: "", password: "",
+    fullName: "", email: "", phone: "", role: "sales", teamId: "", teamIds: [] as string[], password: "",
   });
 
   async function submit(event: React.FormEvent) {
@@ -3308,6 +3410,9 @@ function EmployeeForm({
       phone: form.phone.trim(),
       role: form.role as AppRole,
       team_id: form.teamId,
+      managed_team_ids: form.role === "team_lead"
+        ? [...new Set([form.teamId, ...form.teamIds].filter(Boolean))]
+        : [form.teamId],
       active: true,
       wati_enabled: true,
       created_at: new Date().toISOString(),
@@ -3342,8 +3447,31 @@ function EmployeeForm({
         <label>Full name<input className="plain-input" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required /></label>
         <label>Work email<input className="plain-input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
         <label>Phone (optional)<input className="plain-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
-        <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="sales">Sales Executive</option><option value="team_lead">Team Lead</option></select></label>
-        <label>Team<select value={form.teamId} onChange={(e) => setForm({ ...form, teamId: e.target.value })} required><option value="">Select team</option>{teams.filter((team) => !team.id.startsWith("pending-")).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+        <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value, teamIds: [] })}><option value="sales">Sales Executive</option><option value="team_lead">Team Lead</option></select></label>
+        <label>Primary team<select value={form.teamId} onChange={(e) => setForm({ ...form, teamId: e.target.value })} required><option value="">Select team</option>{teams.filter((team) => !team.id.startsWith("pending-")).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+        {form.role === "team_lead" && (
+          <fieldset className="team-checkbox-field full-span">
+            <legend>Additional teams to manage</legend>
+            <p>The Team Lead can switch between every selected team from their dashboard.</p>
+            <div>
+              {teams.filter((team) => !team.id.startsWith("pending-") && team.id !== form.teamId).map((team) => (
+                <label key={team.id}>
+                  <input
+                    type="checkbox"
+                    checked={form.teamIds.includes(team.id)}
+                    onChange={(event) => setForm({
+                      ...form,
+                      teamIds: event.target.checked
+                        ? [...form.teamIds, team.id]
+                        : form.teamIds.filter((id) => id !== team.id),
+                    })}
+                  />
+                  {team.name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
         <label>Login password<input className="plain-input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} minLength={12} required /></label>
         <button className="primary-button wide full-span">Create employee</button>
       </form>
@@ -3423,12 +3551,14 @@ function EmployeeImport({
 
 function AmbassadorForm({
   user,
+  teamId,
   target,
   onPending,
   onDone,
   onFailed,
 }: {
   user: Profile;
+  teamId: string | null;
   target: number;
   onPending: (ambassador: AmbassadorPerformance) => void;
   onDone: (pendingId: string, ambassador: AmbassadorPerformance) => void;
@@ -3444,7 +3574,7 @@ function AmbassadorForm({
     const pendingAmbassador: AmbassadorPerformance = {
       id: `pending-${crypto.randomUUID()}`,
       sales_id: user.id,
-      team_id: user.team_id ?? "",
+      team_id: teamId ?? "",
       name: form.name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim(),
@@ -3466,7 +3596,7 @@ function AmbassadorForm({
       const response = await fetch("/api/ambassadors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, teamId }),
       });
       if (!response.ok) return onFailed(pendingAmbassador, await readError(response));
       const payload = await response.json() as {
@@ -3478,7 +3608,7 @@ function AmbassadorForm({
       onDone(pendingAmbassador.id, {
         ...payload.ambassador,
         sales_id: payload.ambassador.sales_id ?? user.id,
-        team_id: payload.ambassador.team_id ?? user.team_id ?? "",
+        team_id: payload.ambassador.team_id ?? teamId ?? "",
         target: payload.ambassador.target ?? target,
         registration_count: 0,
         qualified: false,

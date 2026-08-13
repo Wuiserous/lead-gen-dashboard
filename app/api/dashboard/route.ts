@@ -2,6 +2,7 @@ import { after, NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
 import { reportingRangeStart } from "@/lib/reporting-date";
+import { resolveOperationalTeam } from "@/lib/team-access";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import type {
   AmbassadorPerformance,
@@ -67,8 +68,11 @@ export async function GET(request: Request) {
   let teamId = requestedTeamId;
   let salesId = requestedSalesId;
   if (user.role === "team_lead") {
-    if (!user.team_id) return errorResponse("No team is assigned.", 409);
-    teamId = user.team_id;
+    if (!user.managed_team_ids.length) return errorResponse("No team is assigned.", 409);
+    if (requestedTeamId && !user.managed_team_ids.includes(requestedTeamId)) {
+      return errorResponse("You are not assigned to this team.", 403);
+    }
+    teamId = resolveOperationalTeam(user, requestedTeamId);
   } else if (user.role === "sales") {
     teamId = user.team_id;
     salesId = user.id;
@@ -104,10 +108,10 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false });
 
   if (user.role === "team_lead") {
-    teamsQuery = teamsQuery.eq("id", user.team_id);
-    employeesQuery = employeesQuery.eq("team_id", user.team_id);
-    salesQuery = salesQuery.eq("team_id", user.team_id);
-    ambassadorsQuery = ambassadorsQuery.eq("team_id", user.team_id);
+    teamsQuery = teamsQuery.in("id", user.managed_team_ids);
+    employeesQuery = employeesQuery.eq("team_id", teamId);
+    salesQuery = salesQuery.eq("team_id", teamId);
+    ambassadorsQuery = ambassadorsQuery.eq("team_id", teamId);
   } else if (user.role === "sales") {
     teamsQuery = user.team_id
       ? teamsQuery.eq("id", user.team_id)
@@ -192,6 +196,33 @@ export async function GET(request: Request) {
   let registrationRows = registrations.data ?? [];
   let ambassadorRows = ambassadors.data ?? [];
 
+  const employeeRows = (employees.data ?? []) as Profile[];
+  const teamLeadIds = employeeRows
+    .filter((employee) => employee.role === "team_lead")
+    .map((employee) => employee.id);
+  const assignmentResult = teamLeadIds.length
+    ? await admin
+        .from("team_lead_teams")
+        .select("profile_id,team_id")
+        .in("profile_id", teamLeadIds)
+    : { data: [], error: null };
+  if (assignmentResult.error) {
+    return errorResponse("Unable to load Team Lead assignments.", 500);
+  }
+  const managedTeamsByLead = new Map<string, string[]>();
+  for (const assignment of assignmentResult.data ?? []) {
+    const values = managedTeamsByLead.get(assignment.profile_id) ?? [];
+    values.push(assignment.team_id);
+    managedTeamsByLead.set(assignment.profile_id, values);
+  }
+  const employeesWithAssignments = employeeRows.map((employee) => ({
+    ...employee,
+    managed_team_ids:
+      employee.role === "team_lead"
+        ? (managedTeamsByLead.get(employee.id) ?? (employee.team_id ? [employee.team_id] : []))
+        : (employee.team_id ? [employee.team_id] : []),
+  }));
+
   // The common path stays fully parallel. Only refetch when a deletion made
   // the requested page disappear while the user was viewing it.
   if (page !== requestedPage) {
@@ -233,9 +264,10 @@ export async function GET(request: Request) {
 
   const payload: DashboardData = {
     user,
+    activeTeamId: teamId,
     defaultTarget: Number(settings.data?.value ?? 30),
     teams: (teams.data ?? []) as TeamPerformance[],
-    employees: (employees.data ?? []) as Profile[],
+    employees: employeesWithAssignments,
     salesPerformance: (sales.data ?? []) as SalesPerformance[],
     ambassadors: ambassadorRows as AmbassadorPerformance[],
     rankingAmbassadors,

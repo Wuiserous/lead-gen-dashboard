@@ -11,7 +11,8 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 
   if (!user) return null;
 
-  const { data } = await createAdminSupabase()
+  const admin = createAdminSupabase();
+  const { data } = await admin
     .from("profiles")
     .select(
       "id,full_name,email,phone,role,team_id,active,created_at",
@@ -20,7 +21,22 @@ export async function getCurrentProfile(): Promise<Profile | null> {
     .maybeSingle();
 
   if (!data || !data.active) return null;
-  return data as Profile;
+
+  let managedTeamIds = data.team_id ? [data.team_id] : [];
+  if (data.role === "team_lead") {
+    const { data: assignments } = await admin
+      .from("team_lead_teams")
+      .select("team_id")
+      .eq("profile_id", data.id);
+    managedTeamIds = (assignments ?? []).map(
+      (item: { team_id: string }) => item.team_id,
+    );
+    if (data.team_id && !managedTeamIds.includes(data.team_id)) {
+      managedTeamIds.unshift(data.team_id);
+    }
+  }
+
+  return { ...data, managed_team_ids: managedTeamIds } as Profile;
 }
 
 export async function requirePageProfile(roles?: AppRole[]) {

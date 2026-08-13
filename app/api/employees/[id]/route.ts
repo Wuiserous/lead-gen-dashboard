@@ -27,10 +27,20 @@ export async function PATCH(
   if (!profile || profile.role === "admin") {
     return errorResponse("Employee not found.", 404);
   }
+  const { data: existingAssignments } = await admin
+    .from("team_lead_teams")
+    .select("team_id")
+    .eq("profile_id", id);
+  const previousTeamIds = (existingAssignments ?? []).map(
+    (item: { team_id: string }) => item.team_id,
+  );
 
   let nextActive = profile.active;
   let nextTeamId = profile.team_id;
   let nextRole = profile.role;
+  let nextTeamIds = Array.isArray(body.teamIds)
+    ? [...new Set(body.teamIds.map((value: unknown) => cleanText(value, 80)).filter(Boolean))]
+    : previousTeamIds;
   if (body.role !== undefined) {
     const role = cleanText(body.role, 30);
     if (role !== "sales" && role !== "team_lead") {
@@ -55,10 +65,16 @@ export async function PATCH(
     if (!team) return errorResponse("Select an active team.");
     nextTeamId = teamId;
   }
+  if (nextRole === "team_lead") {
+    nextTeamIds = [...new Set([nextTeamId, ...(nextTeamIds ?? [])].filter(Boolean))] as string[];
+  } else {
+    nextTeamIds = [];
+  }
   const employeeAccessChanged =
     nextActive !== profile.active ||
     nextTeamId !== profile.team_id ||
-    nextRole !== profile.role;
+    nextRole !== profile.role ||
+    JSON.stringify([...nextTeamIds].sort()) !== JSON.stringify([...previousTeamIds].sort());
   const watiChanged = nextWatiEnabled !== profile.wati_enabled;
   if (!employeeAccessChanged && !watiChanged) {
     return errorResponse("No changes supplied.");
@@ -71,6 +87,7 @@ export async function PATCH(
       p_role: nextRole,
       p_active: nextActive,
       p_actor_id: actor.id,
+      p_team_ids: nextTeamIds,
     });
     if (error) {
       return errorResponse(
@@ -106,7 +123,7 @@ export async function PATCH(
     });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, managedTeamIds: nextTeamIds });
 }
 
 export async function DELETE(

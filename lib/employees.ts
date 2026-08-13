@@ -8,6 +8,7 @@ export type EmployeeInput = {
   phone?: unknown;
   role?: unknown;
   teamId?: unknown;
+  teamIds?: unknown;
   password?: unknown;
   temporaryPassword?: unknown;
 };
@@ -22,6 +23,12 @@ export async function createEmployee(
   const phone = rawPhone ? normalizeIndianPhone(rawPhone) : "";
   const role = input.role as AppRole;
   const teamId = cleanText(input.teamId, 80);
+  const requestedTeamIds = Array.isArray(input.teamIds)
+    ? input.teamIds.map((value) => cleanText(value, 80)).filter(Boolean)
+    : [];
+  const teamIds = role === "team_lead"
+    ? [...new Set([teamId, ...requestedTeamIds])]
+    : [teamId];
   const password =
     typeof input.password === "string"
       ? input.password
@@ -43,13 +50,25 @@ export async function createEmployee(
   }
 
   const admin = createAdminSupabase();
-  const { data: team } = await admin
+  const { data: selectedTeams } = await admin
     .from("teams")
     .select("id")
-    .eq("id", teamId)
-    .eq("active", true)
-    .maybeSingle();
-  if (!team) throw new Error("Select an active team.");
+    .in("id", teamIds)
+    .eq("active", true);
+  if ((selectedTeams ?? []).length !== teamIds.length) {
+    throw new Error("Select active teams only.");
+  }
+
+  if (role === "team_lead") {
+    const { data: occupied } = await admin
+      .from("team_lead_teams")
+      .select("team_id")
+      .in("team_id", teamIds)
+      .limit(1);
+    if (occupied?.length) {
+      throw new Error("One of the selected teams already has a Team Lead.");
+    }
+  }
 
   const { data, error: authError } = await admin.auth.admin.createUser({
     email,
@@ -81,13 +100,30 @@ export async function createEmployee(
     );
   }
 
+  if (role === "team_lead") {
+    const { error: assignmentError } = await admin
+      .from("team_lead_teams")
+      .insert(teamIds.map((assignedTeamId) => ({
+        profile_id: data.user.id,
+        team_id: assignedTeamId,
+      })));
+    if (assignmentError) {
+      await admin.auth.admin.deleteUser(data.user.id);
+      throw new Error(
+        assignmentError.message.includes("team_lead_teams_team_id_key")
+          ? "One of the selected teams already has a Team Lead."
+          : "Unable to assign the Team Lead's teams.",
+      );
+    }
+  }
+
   await Promise.all([
     admin.from("audit_events").insert({
       actor_id: actorId,
       action: "employee_created",
       entity_type: "profile",
       entity_id: data.user.id,
-      details: { role, team_id: teamId },
+      details: { role, team_id: teamId, managed_team_ids: teamIds },
     }),
     admin.from("activity_events").insert({
       event_type: "employee_created",
@@ -105,6 +141,7 @@ export async function createEmployee(
     phone,
     role,
     team_id: teamId,
+    managed_team_ids: teamIds,
     active: true,
     wati_enabled: true,
     created_at: new Date().toISOString(),

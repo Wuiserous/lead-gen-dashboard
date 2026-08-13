@@ -13,6 +13,7 @@ import type {
   SalesPerformance,
   TeamPerformance,
 } from "@/lib/types";
+import { resolveOperationalTeam } from "@/lib/team-access";
 
 export const dynamic = "force-dynamic";
 
@@ -57,10 +58,19 @@ export async function GET(request: Request) {
   if (eventError || !rawEvent) return errorResponse("Realtime event not found.", 404);
 
   const event = rawEvent as DashboardActivityEvent;
+  const requestedTeamId = optionalUuid(params.get("teamId"));
+  if (
+    user.role === "team_lead" &&
+    requestedTeamId &&
+    !user.managed_team_ids.includes(requestedTeamId)
+  ) {
+    return errorResponse("You are not assigned to this team.", 403);
+  }
+  const activeTeamId = resolveOperationalTeam(user, requestedTeamId);
   const eventAllowed =
     user.role === "admin" ||
     (user.role === "sales" && event.sales_id === user.id) ||
-    (user.role === "team_lead" && event.team_id === user.team_id) ||
+    (user.role === "team_lead" && Boolean(event.team_id) && user.managed_team_ids.includes(event.team_id as string)) ||
     ((event.event_type.startsWith("registration_") ||
       event.event_type.startsWith("ambassador_")) &&
       Boolean(
@@ -68,7 +78,7 @@ export async function GET(request: Request) {
           .from("ambassadors")
           .select("id")
           .eq("id", event.ambassador_id ?? event.entity_id ?? "")
-          .eq(user.role === "sales" ? "sales_id" : "team_id", user.role === "sales" ? user.id : user.team_id)
+          .eq(user.role === "sales" ? "sales_id" : "team_id", user.role === "sales" ? user.id : activeTeamId)
           .maybeSingle()
           .then((result: { data: { id: string } | null }) => result.data),
       ));
@@ -78,8 +88,8 @@ export async function GET(request: Request) {
   let salesId = optionalUuid(params.get("memberId"));
   const groupId = optionalUuid(params.get("groupId"));
   if (user.role === "team_lead") {
-    if (!user.team_id) return errorResponse("No team is assigned.", 409);
-    teamId = user.team_id;
+    if (!activeTeamId) return errorResponse("No team is assigned.", 409);
+    teamId = activeTeamId;
   } else if (user.role === "sales") {
     teamId = user.team_id;
     salesId = user.id;
@@ -163,6 +173,24 @@ export async function GET(request: Request) {
   ].find(Boolean);
   if (firstError) return errorResponse("Unable to apply the realtime update.", 500);
 
+  let profileRow = profile.data as Profile | null;
+  if (profileRow) {
+    let managedTeamIds = profileRow.team_id ? [profileRow.team_id] : [];
+    if (profileRow.role === "team_lead") {
+      const assignments = await admin
+        .from("team_lead_teams")
+        .select("team_id")
+        .eq("profile_id", profileRow.id);
+      if (assignments.error) {
+        return errorResponse("Unable to load Team Lead assignments.", 500);
+      }
+      managedTeamIds = (assignments.data ?? []).map(
+        (item: { team_id: string }) => item.team_id,
+      );
+    }
+    profileRow = { ...profileRow, managed_team_ids: managedTeamIds };
+  }
+
   const summary = summaryResult.data
     ? (summaryResult.data as DashboardSummary)
     : null;
@@ -180,7 +208,7 @@ export async function GET(request: Request) {
     event,
     registration: registration.data as Registration | null,
     ambassador: ambassador.data as AmbassadorPerformance | null,
-    profile: profile.data as Profile | null,
+    profile: profileRow,
     teamPerformance: team.data as TeamPerformance | null,
     salesPerformance: sales.data as SalesPerformance | null,
     summary,

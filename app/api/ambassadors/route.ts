@@ -9,14 +9,17 @@ import {
   normalizeIndianPhone,
   validEmail,
 } from "@/lib/validation";
+import { canManageTeam, resolveOperationalTeam } from "@/lib/team-access";
 
 export async function POST(request: Request) {
   if (!assertSameOrigin(request)) return errorResponse("Invalid request.", 403);
   const user = await requireApiProfile(["sales", "team_lead"]);
   if (!user) return errorResponse("Unauthorized.", 401);
-  if (!user.team_id) return errorResponse("No team is assigned.", 409);
-
   const body = await request.json();
+  const requestedTeamId = cleanText(body.teamId, 80) || null;
+  const teamId = resolveOperationalTeam(user, requestedTeamId);
+  if (!teamId) return errorResponse("No team is assigned.", 409);
+  if (!canManageTeam(user, teamId)) return errorResponse("Unauthorized.", 403);
   const name = cleanText(body.name, 100);
   const email = cleanText(body.email, 254).toLowerCase();
   const phone = normalizeIndianPhone(body.phone);
@@ -41,7 +44,7 @@ export async function POST(request: Request) {
     .from("ambassadors")
     .insert({
       sales_id: user.id,
-      team_id: user.team_id,
+      team_id: teamId,
       name,
       email,
       phone,
@@ -61,7 +64,7 @@ export async function POST(request: Request) {
   await admin.from("activity_events").insert({
     event_type: "ambassador_created",
     actor_id: user.id,
-    team_id: user.team_id,
+    team_id: teamId,
     sales_id: user.id,
     ambassador_id: data.id,
     entity_id: data.id,

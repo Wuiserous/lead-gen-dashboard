@@ -7,6 +7,7 @@ export type Profile = {
   phone: string;
   role: AppRole;
   team_id: string | null;
+  managed_team_ids: string[];
   active: boolean;
   wati_enabled?: boolean;
   created_at: string;
@@ -162,6 +163,7 @@ export type GroupOption = {
 
 export type DashboardData = {
   user: Profile;
+  activeTeamId: string | null;
   defaultTarget: number;
   teams: TeamPerformance[];
   employees: Profile[];

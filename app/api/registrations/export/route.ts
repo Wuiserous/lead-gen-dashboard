@@ -4,6 +4,7 @@ import { errorResponse } from "@/lib/http";
 import { reportingRangeStart } from "@/lib/reporting-date";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import type { RegistrationStatus } from "@/lib/types";
+import { resolveOperationalTeam } from "@/lib/team-access";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -132,12 +133,21 @@ export async function GET(request: Request) {
   }
 
   let teamId = mode === "current" ? requestedTeamId : null;
+  let accessibleTeamIds: string[] | null = null;
   let salesId = mode === "current" ? requestedSalesId : null;
   const groupId = mode === "all" ? null : requestedGroupId;
 
   if (user.role === "team_lead") {
-    if (!user.team_id) return errorResponse("No team is assigned.", 409);
-    teamId = user.team_id;
+    if (!user.managed_team_ids.length) return errorResponse("No team is assigned.", 409);
+    if (requestedTeamId && !user.managed_team_ids.includes(requestedTeamId)) {
+      return errorResponse("You are not assigned to this team.", 403);
+    }
+    if (mode === "current") {
+      teamId = resolveOperationalTeam(user, requestedTeamId);
+    } else {
+      teamId = null;
+      accessibleTeamIds = user.managed_team_ids;
+    }
   } else if (user.role === "sales") {
     teamId = user.team_id;
     salesId = user.id;
@@ -155,6 +165,7 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
 
     if (teamId) query = query.eq("owner_team_id", teamId);
+    if (accessibleTeamIds) query = query.in("owner_team_id", accessibleTeamIds);
     if (salesId) query = query.eq("owner_sales_id", salesId);
     if (groupId) query = query.eq("ambassador_id", groupId);
     if (mode === "current" && startAt) {

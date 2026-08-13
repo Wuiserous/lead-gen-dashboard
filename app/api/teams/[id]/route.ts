@@ -19,14 +19,20 @@ export async function PATCH(
 
   const admin = createAdminSupabase();
   if (!body.active) {
-    const { count } = await admin
-      .from("profiles")
-      .select("id", { count: "exact", head: true })
-      .eq("team_id", id)
-      .eq("active", true);
-    if (count) {
+    const [{ count: employeeCount }, { count: teamLeadCount }] = await Promise.all([
+      admin
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("team_id", id)
+        .eq("active", true),
+      admin
+        .from("team_lead_teams")
+        .select("profile_id", { count: "exact", head: true })
+        .eq("team_id", id),
+    ]);
+    if (employeeCount || teamLeadCount) {
       return errorResponse(
-        "Move or suspend active employees before deactivating this team.",
+        "Move employees and remove Team Lead assignments before deactivating this team.",
         409,
       );
     }
@@ -75,7 +81,7 @@ export async function DELETE(
     .maybeSingle();
   if (!team) return errorResponse("Team not found.", 404);
 
-  const [{ count: employeeCount }, { count: ambassadorCount }] =
+  const [{ count: employeeCount }, { count: ambassadorCount }, { count: teamLeadCount }] =
     await Promise.all([
       admin
         .from("profiles")
@@ -85,11 +91,15 @@ export async function DELETE(
         .from("ambassadors")
         .select("id", { count: "exact", head: true })
         .eq("team_id", id),
+      admin
+        .from("team_lead_teams")
+        .select("profile_id", { count: "exact", head: true })
+        .eq("team_id", id),
     ]);
 
-  if (employeeCount || ambassadorCount) {
+  if (employeeCount || ambassadorCount || teamLeadCount) {
     return errorResponse(
-      "Delete this team's employees and groups before deleting the team.",
+      "Remove this team's employees, groups, and Team Lead assignments before deleting it.",
       409,
     );
   }

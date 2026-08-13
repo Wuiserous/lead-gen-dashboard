@@ -3408,6 +3408,118 @@ p {
   gap: 9px;
 }
 
+.team-workspace-switcher {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px 5px 11px;
+  border: 1px solid #cad6e7;
+  border-radius: 11px;
+  background: #f7faff;
+  color: var(--navy);
+}
+
+.team-workspace-switcher > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.team-workspace-switcher select {
+  max-width: 190px;
+  border: 0;
+  padding: 5px 24px 5px 4px;
+  background-color: transparent;
+  color: var(--navy);
+  font-weight: 800;
+  outline: 0;
+}
+
+.team-assignment-menu {
+  position: relative;
+}
+
+.team-assignment-menu summary {
+  cursor: pointer;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: #fff;
+  color: var(--navy);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.team-assignment-menu > div {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 230px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(7, 29, 66, 0.16);
+}
+
+.team-assignment-menu > div > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--navy);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.team-assignment-menu label,
+.team-checkbox-field label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 5px;
+  color: var(--navy);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.team-assignment-menu label small {
+  margin-left: auto;
+  color: #9a6a00;
+}
+
+.team-checkbox-field {
+  margin: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.team-checkbox-field legend {
+  padding: 0 6px;
+  color: var(--navy);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.team-checkbox-field p {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.team-checkbox-field > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 8px;
+}
+
 .live-pill {
   display: inline-flex;
   align-items: center;
@@ -4753,6 +4865,24 @@ p {
   .header-actions .secondary-button,
   .header-actions .live-pill {
     display: none;
+  }
+
+  .team-workspace-switcher {
+    max-width: 150px;
+    padding-left: 8px;
+  }
+
+  .team-workspace-switcher > span {
+    display: none;
+  }
+
+  .team-workspace-switcher select {
+    max-width: 108px;
+    font-size: 0.74rem;
+  }
+
+  .team-checkbox-field > div {
+    grid-template-columns: 1fr;
   }
 
   .header-actions .primary-button {
