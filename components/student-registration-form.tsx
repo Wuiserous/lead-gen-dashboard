@@ -29,11 +29,17 @@ function nationalPhoneDigits(value: string) {
 export function StudentRegistrationForm({
   slug,
   domain,
+  tracking,
   onDomainChange,
   onRegistered,
 }: {
   slug: string;
   domain: string;
+  tracking?: {
+    visitorId: string;
+    sessionId: string;
+    creativeId: string;
+  };
   onDomainChange: (domain: string) => void;
   onRegistered: (details: RegisteredStudentDetails) => void;
 }) {
@@ -53,7 +59,16 @@ export function StudentRegistrationForm({
       const response = await fetch("/api/public/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug, name, phone, domain, website }),
+        body: JSON.stringify({
+          slug,
+          name,
+          phone,
+          domain,
+          website,
+          tracking: tracking
+            ? { ...tracking, eventId: crypto.randomUUID() }
+            : undefined,
+        }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {

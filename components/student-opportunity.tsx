@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Award,
@@ -236,9 +236,11 @@ function ComplianceCarousel() {
 
 export function StudentOpportunity({
   slug,
+  creativeId,
   ambassador,
 }: {
   slug: string;
+  creativeId: string;
   ambassador: AmbassadorInvite;
 }) {
   const [domain, setDomain] = useState("");
@@ -247,9 +249,59 @@ export function StudentOpportunity({
     useState<RegisteredStudentDetails | null>(null);
   const [showAllDomains, setShowAllDomains] = useState(false);
   const [popupOpen, setPopupOpen] = useState(false);
+  const [tracking, setTracking] = useState<{
+    visitorId: string;
+    sessionId: string;
+    creativeId: string;
+  } | null>(null);
+  const openedForm = useRef(false);
 
-  function showSignupPopup() {
+  const track = useCallback((eventType: string, domainValue?: string) => {
+    if (!tracking) return;
+    void fetch("/api/public/funnel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        slug,
+        ...tracking,
+        eventId: crypto.randomUUID(),
+        eventType,
+        domain: domainValue || undefined,
+      }),
+    }).catch(() => undefined);
+  }, [slug, tracking]);
+
+  useEffect(() => {
+    let visitorId = crypto.randomUUID();
+    try {
+      const storedVisitorId = window.localStorage.getItem("persevex_funnel_visitor");
+      if (storedVisitorId) visitorId = storedVisitorId;
+      else window.localStorage.setItem("persevex_funnel_visitor", visitorId);
+    } catch {
+      // Privacy-mode browsers can block storage. Session tracking still works.
+    }
+    const timer = window.setTimeout(() => {
+      setTracking({
+        visitorId,
+        sessionId: crypto.randomUUID(),
+        creativeId,
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [creativeId]);
+
+  useEffect(() => {
+    if (!tracking) return;
+    track("page_view");
+  }, [track, tracking]);
+
+  function showSignupPopup(selectedDomain = domain) {
     if (registered) return;
+    if (!openedForm.current) {
+      openedForm.current = true;
+      track("form_open", selectedDomain);
+    }
     setPopupOpen(true);
   }
 
@@ -263,7 +315,8 @@ export function StudentOpportunity({
   function chooseDomain(value: string) {
     if (registered) return;
     setDomain(value);
-    showSignupPopup();
+    track("domain_selected", value);
+    showSignupPopup(value);
   }
 
   useEffect(() => {
@@ -339,7 +392,7 @@ export function StudentOpportunity({
           />
           <span className="official-opportunity"><ShieldCheck size={15} /> Official student opportunity</span>
           {!registered && (
-            <button type="button" className="header-register-link" onClick={showSignupPopup}>
+            <button type="button" className="header-register-link" onClick={() => showSignupPopup()}>
               Register now <ArrowRight size={15} />
             </button>
           )}
@@ -417,7 +470,7 @@ export function StudentOpportunity({
           </div>
 
           {!registered && (
-            <button type="button" className="hero-register-button" onClick={showSignupPopup}>
+            <button type="button" className="hero-register-button" onClick={() => showSignupPopup()}>
               Register for internship <ArrowRight size={18} />
             </button>
           )}
@@ -561,9 +614,10 @@ export function StudentOpportunity({
                 <X size={18} />
               </button>
             </div>
-            <StudentRegistrationForm
-              slug={slug}
-              domain={domain}
+                  <StudentRegistrationForm
+                    slug={slug}
+                    domain={domain}
+                    tracking={tracking ?? undefined}
               onDomainChange={setDomain}
               onRegistered={(details) => {
                 setRegistrationDetails(details);

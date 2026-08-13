@@ -299,3 +299,77 @@ export type AdminStatistics = {
   }>;
   generatedAt: string;
 };
+
+export type FunnelStage = {
+  key: string;
+  label: string;
+  count: number;
+  rateFromPrevious: number;
+  rateFromVisitors: number;
+};
+
+export type FunnelBreakdownRow = {
+  id: string;
+  name: string;
+  college?: string;
+  role?: "sales" | "team_lead";
+  teamId: string | null;
+  teamName: string | null;
+  salesId?: string;
+  salesName?: string | null;
+  ambassadors: number;
+  visitors: number;
+  formOpens: number;
+  domainSelections: number;
+  attempts: number;
+  registrations: number;
+  whatsappDelivered: number;
+  whatsappReplies: number;
+  advisorRequests: number;
+  enrolled: number;
+  visitToRegistrationRate: number;
+  registrationToReplyRate: number;
+  advisorToEnrollmentRate: number;
+};
+
+export type FunnelInsight = {
+  severity: "critical" | "warning" | "positive" | "info";
+  level: "organization" | "team" | "executive" | "ca";
+  entityId: string | null;
+  entityName: string;
+  title: string;
+  detail: string;
+  recommendation: string;
+};
+
+export type AdminFunnelAnalytics = {
+  overview: {
+    visitors: number;
+    formOpens: number;
+    domainSelections: number;
+    attempts: number;
+    registrations: number;
+    whatsappDelivered: number;
+    whatsappReplies: number;
+    advisorRequests: number;
+    enrolled: number;
+  };
+  stages: FunnelStage[];
+  teams: FunnelBreakdownRow[];
+  members: FunnelBreakdownRow[];
+  ambassadors: FunnelBreakdownRow[];
+  insights: FunnelInsight[];
+  options: {
+    teams: Array<{ id: string; name: string }>;
+    members: Array<{ id: string; name: string; teamId: string | null }>;
+    ambassadors: Array<{
+      id: string;
+      name: string;
+      college: string;
+      salesId: string;
+      teamId: string;
+    }>;
+  };
+  trackingStartedAt: string | null;
+  generatedAt: string;
+};

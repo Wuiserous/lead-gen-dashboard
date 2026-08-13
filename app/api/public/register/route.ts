@@ -10,6 +10,7 @@ import {
   secureHash,
 } from "@/lib/validation";
 import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
+import { recordFunnelEvent } from "@/lib/funnel-events";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -31,6 +32,23 @@ export async function POST(request: Request) {
   const ipHash = secureHash(ip, secret);
   const phoneHash = secureHash(phone, secret);
   const admin = createAdminSupabase();
+  const tracking = body.tracking && typeof body.tracking === "object"
+    ? body.tracking as Record<string, unknown>
+    : null;
+  if (tracking) {
+    await recordFunnelEvent({
+      slug,
+      visitorId: tracking.visitorId,
+      sessionId: tracking.sessionId,
+      eventId: tracking.eventId,
+      eventType: "registration_attempt",
+      domain,
+      creativeId: tracking.creativeId,
+      request,
+    }).catch((eventError) => {
+      console.error("Unable to record registration attempt", eventError);
+    });
+  }
   const { data: attemptId, error: attemptError } = await admin.rpc(
     "reserve_registration_attempt",
     {
@@ -81,6 +99,22 @@ export async function POST(request: Request) {
       return errorResponse("This invitation is no longer active.", 404);
     }
     return errorResponse("Unable to complete registration right now.", 500);
+  }
+
+  if (tracking) {
+    await recordFunnelEvent({
+      slug,
+      visitorId: tracking.visitorId,
+      sessionId: tracking.sessionId,
+      eventId: crypto.randomUUID(),
+      eventType: "registration_completed",
+      domain,
+      creativeId: tracking.creativeId,
+      registrationId: data,
+      request,
+    }).catch((eventError) => {
+      console.error("Unable to record registration completion", eventError);
+    });
   }
 
   const { data: queuedJob } = await admin

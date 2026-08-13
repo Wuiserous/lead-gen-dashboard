@@ -23,6 +23,7 @@ import type {
   Profile,
   RegistrationStatus,
 } from "@/lib/types";
+import { AdminFunnelAnalyticsPanel } from "@/components/admin-funnel-analytics";
 
 type StatisticsRange = "all" | "today" | "7d" | "30d";
 
@@ -157,6 +158,7 @@ export function AdminStatistics({ user }: { user: Profile }) {
       </section>
 
       <div className="statistics-content">
+        <AdminFunnelAnalyticsPanel dateRange={dateRange} />
         {error && <div className="alert error">{error}</div>}
         {loading || !data ? (
           <div className="statistics-loading"><RefreshCw className="spin" /><p>Calculating organization performance...</p></div>

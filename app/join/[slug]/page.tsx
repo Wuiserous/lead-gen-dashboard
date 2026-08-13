@@ -67,14 +67,16 @@ export async function generateMetadata({
   };
 }
 
-export default async function JoinPage({ params }: PageProps) {
-  const { slug } = await params;
+export default async function JoinPage({ params, searchParams }: PageProps) {
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
   const ambassador = await getAmbassador(slug);
   if (!ambassador) notFound();
+  const creative = findShareCreative(query.creative);
 
   return (
     <StudentOpportunity
       slug={slug}
+      creativeId={creative.id}
       ambassador={{
         name: ambassador.name,
         college: ambassador.college,
