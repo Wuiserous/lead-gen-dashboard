@@ -30,6 +30,14 @@ export async function PATCH(
 
   let nextActive = profile.active;
   let nextTeamId = profile.team_id;
+  let nextRole = profile.role;
+  if (body.role !== undefined) {
+    const role = cleanText(body.role, 30);
+    if (role !== "sales" && role !== "team_lead") {
+      return errorResponse("Select Sales Executive or Team Lead.");
+    }
+    nextRole = role;
+  }
   let nextWatiEnabled =
     typeof body.watiEnabled === "boolean"
       ? body.watiEnabled
@@ -48,22 +56,26 @@ export async function PATCH(
     nextTeamId = teamId;
   }
   const employeeAccessChanged =
-    nextActive !== profile.active || nextTeamId !== profile.team_id;
+    nextActive !== profile.active ||
+    nextTeamId !== profile.team_id ||
+    nextRole !== profile.role;
   const watiChanged = nextWatiEnabled !== profile.wati_enabled;
   if (!employeeAccessChanged && !watiChanged) {
     return errorResponse("No changes supplied.");
   }
 
   if (employeeAccessChanged) {
-    const { error } = await admin.rpc("admin_update_employee", {
+    const { error } = await admin.rpc("admin_update_employee_access", {
       p_employee_id: id,
       p_team_id: nextTeamId,
+      p_role: nextRole,
       p_active: nextActive,
       p_actor_id: actor.id,
     });
     if (error) {
       return errorResponse(
-        error.message.includes("one_active_team_lead")
+        error.message.includes("one_active_team_lead") ||
+          error.message.includes("TEAM_LEAD_ALREADY_ASSIGNED")
           ? "The selected team already has an active Team Lead."
           : "Unable to update the employee.",
         409,
@@ -89,7 +101,7 @@ export async function PATCH(
       event_type: "employee_updated",
       actor_id: actor.id,
       team_id: profile.team_id,
-      sales_id: profile.role === "sales" ? id : null,
+      sales_id: id,
       entity_id: id,
     });
   }

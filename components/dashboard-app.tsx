@@ -1994,6 +1994,10 @@ function EmployeesView({
       typeof body.teamId === "string" ? body.teamId : previous.team_id;
     const nextActive =
       typeof body.active === "boolean" ? body.active : previous.active;
+    const nextRole =
+      body.role === "sales" || body.role === "team_lead"
+        ? body.role
+        : previous.role;
     const teamChanged = nextTeamId !== previous.team_id;
     const ambassadorCount = previousPerformance?.ambassador_count ?? 0;
     onUpdate((current) => ({
@@ -2005,6 +2009,9 @@ function EmployeesView({
               ...(typeof body.active === "boolean" ? { active: body.active } : {}),
               ...(body.active === false ? { wati_enabled: false } : {}),
               ...(typeof body.teamId === "string" ? { team_id: body.teamId } : {}),
+              ...(body.role === "sales" || body.role === "team_lead"
+                ? { role: body.role }
+                : {}),
               ...(typeof body.watiEnabled === "boolean"
                 ? { wati_enabled: body.watiEnabled }
                 : {}),
@@ -2024,10 +2031,11 @@ function EmployeesView({
           )
         : current.ambassadors,
       teams: current.teams.map((team) => {
-        if (previous.role !== "sales") return team;
         const salesDelta =
-          (nextActive && team.id === nextTeamId ? 1 : 0) -
-          (previous.active && team.id === previous.team_id ? 1 : 0);
+          (nextRole === "sales" && nextActive && team.id === nextTeamId ? 1 : 0) -
+          (previous.role === "sales" && previous.active && team.id === previous.team_id
+            ? 1
+            : 0);
         const ambassadorDelta = teamChanged
           ? (team.id === nextTeamId ? ambassadorCount : 0) -
             (team.id === previous.team_id ? ambassadorCount : 0)
@@ -2066,10 +2074,11 @@ function EmployeesView({
             )
           : current.ambassadors,
         teams: current.teams.map((team) => {
-          if (previous.role !== "sales") return team;
           const salesDelta =
-            (previous.active && team.id === previous.team_id ? 1 : 0) -
-            (nextActive && team.id === nextTeamId ? 1 : 0);
+            (previous.role === "sales" && previous.active && team.id === previous.team_id
+              ? 1
+              : 0) -
+            (nextRole === "sales" && nextActive && team.id === nextTeamId ? 1 : 0);
           const ambassadorDelta = teamChanged
             ? (team.id === previous.team_id ? ambassadorCount : 0) -
               (team.id === nextTeamId ? ambassadorCount : 0)
@@ -2154,7 +2163,7 @@ function EmployeesView({
           <h2>{data.user.role === "admin" ? "Employee access" : "Assigned team"}</h2>
           <p>
             {data.user.role === "admin"
-              ? "Create accounts, assign teams, suspend access, and control WATI employee by employee."
+              ? "Create accounts, update roles, assign teams, suspend access, and control WATI employee by employee."
               : "Performance and assignments inside your team."}
           </p>
         </div>
@@ -2176,7 +2185,28 @@ function EmployeesView({
                 <span className="avatar">{employee.full_name[0]}</span>
                 <div><strong>{employee.full_name}</strong><small>{employee.email}</small></div>
               </div>
-              <span className="role-tag">{roleLabel(employee.role)}</span>
+              {data.user.role === "admin" && employee.role !== "admin" ? (
+                <select
+                  className="employee-role-select"
+                  value={employee.role}
+                  disabled={pending}
+                  aria-label={"Role for " + employee.full_name}
+                  onChange={(event) => {
+                    const role = event.target.value as "sales" | "team_lead";
+                    const confirmed = window.confirm(
+                      "Change " + employee.full_name + "'s role to " +
+                        roleLabel(role) +
+                        "? Their dashboard permissions will change immediately.",
+                    );
+                    if (confirmed) void patchEmployee(employee.id, { role });
+                  }}
+                >
+                  <option value="sales">Sales Executive</option>
+                  <option value="team_lead">Team Lead</option>
+                </select>
+              ) : (
+                <span className="role-tag">{roleLabel(employee.role)}</span>
+              )}
               {data.user.role === "admin" && employee.role !== "admin" ? (
                 <select
                   value={employee.team_id ?? ""}
@@ -3265,6 +3295,7 @@ function EmployeeForm({
       role: form.role as AppRole,
       team_id: form.teamId,
       active: true,
+      wati_enabled: true,
       created_at: new Date().toISOString(),
     };
     onPending(pendingEmployee);

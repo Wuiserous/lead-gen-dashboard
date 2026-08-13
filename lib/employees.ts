@@ -68,6 +68,7 @@ export async function createEmployee(
     role,
     team_id: teamId,
     active: true,
+    wati_enabled: true,
     must_change_password: false,
   });
 
@@ -105,7 +106,7 @@ export async function createEmployee(
     role,
     team_id: teamId,
     active: true,
-    wati_enabled: false,
+    wati_enabled: true,
     created_at: new Date().toISOString(),
   };
 }

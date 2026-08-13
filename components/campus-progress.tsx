@@ -191,19 +191,22 @@ export function CampusProgress({ progressKey }: { progressKey: string }) {
             <div>
               <span className="eyebrow">YOUR REGISTRATIONS</span>
               <h2>Students registered through your link</h2>
-              <p>Conversion updates appear here automatically.</p>
+              <p>Enrollment updates appear here automatically.</p>
             </div>
             <div className="progress-leads-summary">
               <span><Users size={16} /><strong>{data.registration_total}</strong> registered</span>
-              <span className="converted"><CheckCircle2 size={16} /><strong>{data.converted_count}</strong> converted</span>
+              <span className="enrolled"><CheckCircle2 size={16} /><strong>{data.converted_count}</strong> enrolled</span>
             </div>
           </div>
 
           <div className="progress-lead-list">
             {data.registrations.map((registration) => {
-              const converted = registration.status === "converted";
+              const enrolled = registration.status === "converted";
               return (
-                <article className="progress-lead-row" key={registration.id}>
+                <article
+                  className={`progress-lead-row ${enrolled ? "enrolled" : ""}`}
+                  key={registration.id}
+                >
                   <span className="progress-lead-avatar">
                     {registration.name.trim().slice(0, 1).toUpperCase()}
                   </span>
@@ -219,9 +222,9 @@ export function CampusProgress({ progressKey }: { progressKey: string }) {
                       year: "numeric",
                     })}
                   </span>
-                  <span className={`progress-lead-status ${converted ? "converted" : ""}`}>
-                    {converted ? <CheckCircle2 size={14} /> : <Users size={14} />}
-                    {converted ? "Converted" : "Registered"}
+                  <span className={`progress-lead-status ${enrolled ? "enrolled" : ""}`}>
+                    {enrolled ? <CheckCircle2 size={14} /> : <Users size={14} />}
+                    {enrolled ? "Enrolled" : "Registered"}
                   </span>
                 </article>
               );
@@ -282,7 +285,7 @@ function CampusLeaderboard({
         <div className="ca-personal-standing">
           <span>Your position</span>
           <strong>#{current.rank}</strong>
-          <p>{current.registrations} registrations · {current.conversions} converted</p>
+          <p>{current.registrations} registrations · {current.conversions} enrolled</p>
         </div>
       )}
 
