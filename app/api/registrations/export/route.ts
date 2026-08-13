@@ -34,9 +34,11 @@ const csvFields = [
   "Campus Ambassador Phone",
   "College",
   "City",
-  "Credited Employee",
-  "Employee Email",
-  "Team",
+  "Current Owner",
+  "Owner Email",
+  "Current Team",
+  "Originally Captured By",
+  "Original Team",
   "Registration ID",
   "Anonymized",
 ];
@@ -48,6 +50,8 @@ type ExportRegistration = {
   ambassador_id: string;
   credited_sales_id: string;
   credited_team_id: string;
+  owner_sales_id: string;
+  owner_team_id: string;
   name: string;
   phone: string;
   preferred_domain: string;
@@ -146,12 +150,12 @@ export async function GET(request: Request) {
     let query = admin
       .from("registrations")
       .select(
-        "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at",
+        "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at",
       )
       .order("created_at", { ascending: false });
 
-    if (teamId) query = query.eq("credited_team_id", teamId);
-    if (salesId) query = query.eq("credited_sales_id", salesId);
+    if (teamId) query = query.eq("owner_team_id", teamId);
+    if (salesId) query = query.eq("owner_sales_id", salesId);
     if (groupId) query = query.eq("ambassador_id", groupId);
     if (mode === "current" && startAt) {
       query = query
@@ -174,8 +178,16 @@ export async function GET(request: Request) {
   }
 
   const ambassadorIds = [...new Set(registrations.map((row) => row.ambassador_id))];
-  const salesIds = [...new Set(registrations.map((row) => row.credited_sales_id))];
-  const teamIds = [...new Set(registrations.map((row) => row.credited_team_id))];
+  const salesIds = [
+    ...new Set(
+      registrations.flatMap((row) => [row.owner_sales_id, row.credited_sales_id]),
+    ),
+  ];
+  const teamIds = [
+    ...new Set(
+      registrations.flatMap((row) => [row.owner_team_id, row.credited_team_id]),
+    ),
+  ];
 
   const [ambassadorsResult, profilesResult, teamsResult] = await Promise.all([
     ambassadorIds.length
@@ -202,8 +214,10 @@ export async function GET(request: Request) {
 
   const csvRows = registrations.map((registration) => {
     const ambassador = ambassadors.get(registration.ambassador_id);
-    const employee = profiles.get(registration.credited_sales_id);
-    const team = teams.get(registration.credited_team_id);
+    const employee = profiles.get(registration.owner_sales_id);
+    const team = teams.get(registration.owner_team_id);
+    const capturedBy = profiles.get(registration.credited_sales_id);
+    const originalTeam = teams.get(registration.credited_team_id);
 
     return {
       "Student Name": registration.name,
@@ -217,9 +231,11 @@ export async function GET(request: Request) {
       "Campus Ambassador Phone": ambassador?.phone ?? "",
       College: ambassador?.college ?? "",
       City: ambassador?.city ?? "",
-      "Credited Employee": employee?.full_name ?? "",
-      "Employee Email": employee?.email ?? "",
-      Team: team?.name ?? "",
+      "Current Owner": employee?.full_name ?? "",
+      "Owner Email": employee?.email ?? "",
+      "Current Team": team?.name ?? "",
+      "Originally Captured By": capturedBy?.full_name ?? "",
+      "Original Team": originalTeam?.name ?? "",
       "Registration ID": registration.id,
       Anonymized: registration.anonymized_at ? "Yes" : "No",
     };

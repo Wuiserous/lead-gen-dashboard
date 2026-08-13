@@ -170,8 +170,8 @@ function registrationMatchesView(
 ) {
   const needle = filters.search.toLowerCase();
   return (
-    (filters.teamId === "all" || lead.credited_team_id === filters.teamId) &&
-    (filters.memberId === "all" || lead.credited_sales_id === filters.memberId) &&
+    (filters.teamId === "all" || lead.owner_team_id === filters.teamId) &&
+    (filters.memberId === "all" || lead.owner_sales_id === filters.memberId) &&
     (filters.groupId === "all" || lead.ambassador_id === filters.groupId) &&
     inDateRange(lead.created_at, filters.dateRange) &&
     (
@@ -846,8 +846,8 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const filteredRegistrations = data.registrations.filter((lead) => {
     const needle = search.toLowerCase();
     return (
-      (teamFilter === "all" || lead.credited_team_id === teamFilter) &&
-      (memberFilter === "all" || lead.credited_sales_id === memberFilter) &&
+      (teamFilter === "all" || lead.owner_team_id === teamFilter) &&
+      (memberFilter === "all" || lead.owner_sales_id === memberFilter) &&
       (groupFilter === "all" || lead.ambassador_id === groupFilter) &&
       inDateRange(lead.created_at, dateRange) &&
       (
@@ -2030,6 +2030,13 @@ function EmployeesView({
               : ambassador,
           )
         : current.ambassadors,
+      registrations: teamChanged && nextTeamId
+        ? current.registrations.map((registration) =>
+            registration.owner_sales_id === id
+              ? { ...registration, owner_team_id: nextTeamId }
+              : registration,
+          )
+        : current.registrations,
       teams: current.teams.map((team) => {
         const salesDelta =
           (nextRole === "sales" && nextActive && team.id === nextTeamId ? 1 : 0) -
@@ -2073,6 +2080,13 @@ function EmployeesView({
                 : ambassador,
             )
           : current.ambassadors,
+        registrations: teamChanged && previous.team_id
+          ? current.registrations.map((registration) =>
+              registration.owner_sales_id === id
+                ? { ...registration, owner_team_id: previous.team_id as string }
+                : registration,
+            )
+          : current.registrations,
         teams: current.teams.map((team) => {
           const salesDelta =
             (previous.role === "sales" && previous.active && team.id === previous.team_id
@@ -2784,7 +2798,7 @@ function LeadsTable({
         <LeadRow
           key={lead.id}
           lead={lead}
-          executiveName={executiveNames.get(lead.credited_sales_id) ?? "Unassigned"}
+          executiveName={executiveNames.get(lead.owner_sales_id) ?? "Unassigned"}
           canDelete={canDelete}
           whatsappAccess={whatsappAccess}
           onUpdate={onUpdate}

@@ -113,6 +113,8 @@ export type Registration = {
   ambassador_id: string;
   credited_sales_id: string;
   credited_team_id: string;
+  owner_sales_id: string;
+  owner_team_id: string;
   name: string;
   phone: string;
   preferred_domain: string;

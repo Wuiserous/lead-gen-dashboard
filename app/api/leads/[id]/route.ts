@@ -34,12 +34,12 @@ export async function PATCH(
     .update({ status, note })
     .eq("id", id);
   if (user.role === "sales") {
-    updateQuery = updateQuery.eq("credited_sales_id", user.id);
+    updateQuery = updateQuery.eq("owner_sales_id", user.id);
   } else if (user.role === "team_lead") {
-    updateQuery = updateQuery.eq("credited_team_id", user.team_id);
+    updateQuery = updateQuery.eq("owner_team_id", user.team_id);
   }
   const { data: lead, error } = await updateQuery
-    .select("id,credited_sales_id,credited_team_id,ambassador_id,status,note,updated_at")
+    .select("id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,ambassador_id,status,note,updated_at")
     .maybeSingle();
   if (error) return errorResponse("Unable to update the registration.", 500);
   if (!lead) return errorResponse("Registration not found or unavailable.", 404);
@@ -100,10 +100,10 @@ export async function DELETE(
     .delete()
     .eq("id", id);
   if (user.role === "team_lead") {
-    deleteQuery = deleteQuery.eq("credited_team_id", user.team_id);
+    deleteQuery = deleteQuery.eq("owner_team_id", user.team_id);
   }
   const { data: lead, error } = await deleteQuery
-    .select("id,credited_sales_id,credited_team_id,ambassador_id")
+    .select("id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,ambassador_id")
     .maybeSingle();
   if (error) return errorResponse("Unable to delete the registration.", 500);
   if (!lead) return errorResponse("Registration not found or unavailable.", 404);
@@ -121,8 +121,8 @@ export async function DELETE(
     admin.from("activity_events").insert({
       event_type: "registration_deleted",
       actor_id: user.id,
-      team_id: lead.credited_team_id,
-      sales_id: lead.credited_sales_id,
+      team_id: lead.owner_team_id,
+      sales_id: lead.owner_sales_id,
       ambassador_id: lead.ambassador_id,
       entity_id: id,
     }),

@@ -45,6 +45,8 @@ type RegistrationContext = {
   preferred_domain: string;
   credited_sales_id: string;
   credited_team_id: string;
+  owner_sales_id: string;
+  owner_team_id: string;
   ambassador_id: string;
   ambassador: { name: string } | Array<{ name: string }> | null;
 };
@@ -74,7 +76,7 @@ async function loadJobContext(job: WhatsAppJob) {
     admin
       .from("registrations")
       .select(
-        "id,name,phone,preferred_domain,credited_sales_id,credited_team_id,ambassador_id,ambassador:ambassadors(name)",
+        "id,name,phone,preferred_domain,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,ambassador_id,ambassador:ambassadors(name)",
       )
       .eq("id", job.registration_id)
       .maybeSingle(),

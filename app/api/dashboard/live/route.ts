@@ -45,8 +45,8 @@ export async function GET(request: Request) {
     ? "id,full_name,email,phone,role,team_id,active,wati_enabled,created_at"
     : "id,full_name,email,phone,role,team_id,active,created_at";
   const registrationSelect = user.role === "admin" || user.role === "sales"
-    ? "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
-    : "id,ambassador_id,credited_sales_id,credited_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)";
+    ? "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
+    : "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)";
   const { data: rawEvent, error: eventError } = await admin
     .from("activity_events")
     .select(
@@ -60,7 +60,18 @@ export async function GET(request: Request) {
   const eventAllowed =
     user.role === "admin" ||
     (user.role === "sales" && event.sales_id === user.id) ||
-    (user.role === "team_lead" && event.team_id === user.team_id);
+    (user.role === "team_lead" && event.team_id === user.team_id) ||
+    ((event.event_type.startsWith("registration_") ||
+      event.event_type.startsWith("ambassador_")) &&
+      Boolean(
+        await admin
+          .from("ambassadors")
+          .select("id")
+          .eq("id", event.ambassador_id ?? event.entity_id ?? "")
+          .eq(user.role === "sales" ? "sales_id" : "team_id", user.role === "sales" ? user.id : user.team_id)
+          .maybeSingle()
+          .then((result: { data: { id: string } | null }) => result.data),
+      ));
   if (!eventAllowed) return errorResponse("Unauthorized.", 403);
 
   let teamId = optionalUuid(params.get("teamId"));
