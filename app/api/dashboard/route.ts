@@ -2,6 +2,11 @@ import { after, NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
 import { reportingRangeStart } from "@/lib/reporting-date";
+import {
+  optionalInternshipDomain,
+  optionalRegistrationStatus,
+  optionalWhatsAppStage,
+} from "@/lib/registration-filters";
 import { resolveOperationalTeam } from "@/lib/team-access";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import type {
@@ -54,6 +59,9 @@ export async function GET(request: Request) {
   const ambassadorId = optionalUuid(params.get("groupId"));
   const startAt = reportingRangeStart(params.get("dateRange"))?.toISOString() ?? null;
   const search = safeSearch(params.get("search"));
+  const status = optionalRegistrationStatus(params.get("status"));
+  const domain = optionalInternshipDomain(params.get("domain"));
+  const whatsappStage = optionalWhatsAppStage(params.get("whatsappStage"));
   const requestedPage = Math.max(1, Number(params.get("page")) || 1);
   const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize")) || 50));
   const requestedAmbassadorPage = Math.max(
@@ -82,9 +90,15 @@ export async function GET(request: Request) {
   const employeeSelect = user.role === "admin"
     ? "id,full_name,email,phone,role,team_id,active,wati_enabled,created_at"
     : "id,full_name,email,phone,role,team_id,active,created_at";
+  const fullWhatsAppRelation = whatsappStage
+    ? "whatsapp:whatsapp_conversations!inner(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
+    : "whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)";
+  const teamLeadWhatsAppRelation = whatsappStage
+    ? ",whatsapp:whatsapp_conversations!inner(id,state)"
+    : "";
   const registrationSelect = user.role === "admin" || user.role === "sales"
-    ? "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
-    : "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)";
+    ? `id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),${fullWhatsAppRelation}`
+    : `id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)${teamLeadWhatsAppRelation}`;
   after(async () => {
     await admin.rpc("anonymize_expired_registrations");
   });
@@ -144,6 +158,9 @@ export async function GET(request: Request) {
       `name.ilike.${pattern},phone.ilike.${pattern},preferred_domain.ilike.${pattern}`,
     );
   }
+  if (status) registrationsQuery = registrationsQuery.eq("status", status);
+  if (domain) registrationsQuery = registrationsQuery.eq("preferred_domain", domain);
+  if (whatsappStage) registrationsQuery = registrationsQuery.eq("whatsapp.state", whatsappStage);
 
   const offset = (requestedPage - 1) * pageSize;
   const ambassadorOffset = (requestedAmbassadorPage - 1) * ambassadorPageSize;
@@ -162,12 +179,15 @@ export async function GET(request: Request) {
         .select("value")
         .eq("key", "default_ambassador_target")
         .maybeSingle(),
-      admin.rpc("dashboard_summary", {
+      admin.rpc("dashboard_summary_filtered", {
         p_team_id: teamId,
         p_sales_id: salesId,
         p_ambassador_id: ambassadorId,
         p_start_at: startAt,
         p_search: search || null,
+        p_status: status,
+        p_domain: domain,
+        p_whatsapp_state: whatsappStage,
       }),
     ]);
 

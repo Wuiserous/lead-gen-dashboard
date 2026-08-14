@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
 import { reportingRangeStart } from "@/lib/reporting-date";
+import {
+  optionalInternshipDomain,
+  optionalRegistrationStatus,
+  optionalWhatsAppStage,
+} from "@/lib/registration-filters";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import type {
   AmbassadorPerformance,
@@ -45,9 +50,6 @@ export async function GET(request: Request) {
   const employeeSelect = user.role === "admin"
     ? "id,full_name,email,phone,role,team_id,active,wati_enabled,created_at"
     : "id,full_name,email,phone,role,team_id,active,created_at";
-  const registrationSelect = user.role === "admin" || user.role === "sales"
-    ? "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
-    : "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)";
   const { data: rawEvent, error: eventError } = await admin
     .from("activity_events")
     .select(
@@ -97,6 +99,18 @@ export async function GET(request: Request) {
 
   const startAt = reportingRangeStart(params.get("dateRange"))?.toISOString() ?? null;
   const search = safeSearch(params.get("search"));
+  const status = optionalRegistrationStatus(params.get("status"));
+  const domain = optionalInternshipDomain(params.get("domain"));
+  const whatsappStage = optionalWhatsAppStage(params.get("whatsappStage"));
+  const fullWhatsAppRelation = whatsappStage
+    ? "whatsapp:whatsapp_conversations!inner(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)"
+    : "whatsapp:whatsapp_conversations(id,state,lead_score,urgency,bot_paused,opted_out_at,last_inbound_at,last_outbound_at,follow_up_at,last_message_status,last_error,updated_at)";
+  const teamLeadWhatsAppRelation = whatsappStage
+    ? ",whatsapp:whatsapp_conversations!inner(id,state)"
+    : "";
+  const registrationSelect = user.role === "admin" || user.role === "sales"
+    ? `id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college),${fullWhatsAppRelation}`
+    : `id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,ambassador:ambassadors(name,college)${teamLeadWhatsAppRelation}`;
   const requestedPage = Math.max(1, Number(params.get("page")) || 1);
   const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize")) || 50));
   const requestedAmbassadorPage = Math.max(
@@ -116,21 +130,34 @@ export async function GET(request: Request) {
 
   const summaryPromise = isEmployeeEvent || isTeamEvent
     ? Promise.resolve({ data: null, error: null })
-    : admin.rpc("dashboard_summary", {
+    : admin.rpc("dashboard_summary_filtered", {
         p_team_id: teamId,
         p_sales_id: salesId,
         p_ambassador_id: groupId,
         p_start_at: startAt,
         p_search: search || null,
+        p_status: status,
+        p_domain: domain,
+        p_whatsapp_state: whatsappStage,
       });
-  const registrationPromise =
-    isRegistrationEvent && event.event_type !== "registration_deleted" && event.entity_id
-      ? admin
-          .from("registrations")
-          .select(registrationSelect)
-          .eq("id", event.entity_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null });
+  let registrationPromise: PromiseLike<{ data: unknown; error: unknown }> =
+    Promise.resolve({ data: null, error: null });
+  if (
+    isRegistrationEvent &&
+    event.event_type !== "registration_deleted" &&
+    event.entity_id
+  ) {
+    let registrationQuery = admin
+      .from("registrations")
+      .select(registrationSelect)
+      .eq("id", event.entity_id);
+    if (status) registrationQuery = registrationQuery.eq("status", status);
+    if (domain) registrationQuery = registrationQuery.eq("preferred_domain", domain);
+    if (whatsappStage) {
+      registrationQuery = registrationQuery.eq("whatsapp.state", whatsappStage);
+    }
+    registrationPromise = registrationQuery.maybeSingle();
+  }
   const ambassadorPromise = affectedAmbassadorId
     ? admin
         .from("ambassador_performance")

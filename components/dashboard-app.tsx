@@ -48,6 +48,7 @@ import {
   peekDashboardBootstrap,
 } from "@/lib/dashboard-bootstrap";
 import { buildWhatsAppDraft, shareCreatives } from "@/lib/share-creatives";
+import { internshipDomainNames } from "@/lib/domains";
 import { PerformanceLeaderboard } from "@/components/performance-leaderboard";
 import type {
   AmbassadorPerformance,
@@ -62,6 +63,7 @@ import type {
   TeamPerformance,
   WhatsAppConversationSummary,
   WhatsAppMessage,
+  WhatsAppStage,
 } from "@/lib/types";
 
 type Tab = "overview" | "leaderboard" | "teams" | "employees" | "ambassadors" | "leads";
@@ -166,13 +168,20 @@ function registrationMatchesView(
     groupId: string;
     dateRange: DateRange;
     search: string;
+    status: RegistrationStatus | "all";
+    domain: string;
+    whatsappStage: WhatsAppStage | "all";
   },
 ) {
   const needle = filters.search.toLowerCase();
+  const whatsapp = whatsappFor(lead);
   return (
     (filters.teamId === "all" || lead.owner_team_id === filters.teamId) &&
     (filters.memberId === "all" || lead.owner_sales_id === filters.memberId) &&
     (filters.groupId === "all" || lead.ambassador_id === filters.groupId) &&
+    (filters.status === "all" || lead.status === filters.status) &&
+    (filters.domain === "all" || lead.preferred_domain === filters.domain) &&
+    (filters.whatsappStage === "all" || whatsapp?.state === filters.whatsappStage) &&
     inDateRange(lead.created_at, filters.dateRange) &&
     (
       !needle ||
@@ -237,6 +246,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
   const [groupFilter, setGroupFilter] = useState("all");
   const [memberFilter, setMemberFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
+  const [statusFilter, setStatusFilter] = useState<RegistrationStatus | "all">("all");
+  const [domainFilter, setDomainFilter] = useState("all");
+  const [whatsappStageFilter, setWhatsappStageFilter] = useState<WhatsAppStage | "all">("all");
   const [exportScope, setExportScope] = useState<ExportScope>("current");
   const [exporting, setExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState("");
@@ -260,6 +272,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     groupFilter,
     dateRange,
     debouncedSearch,
+    statusFilter,
+    domainFilter,
+    whatsappStageFilter,
     page,
     ambassadorPage,
   ].join("|");
@@ -303,6 +318,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     if (groupFilter !== "all") params.set("groupId", groupFilter);
     if (dateRange !== "all") params.set("dateRange", dateRange);
     if (debouncedSearch) params.set("search", debouncedSearch);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (domainFilter !== "all") params.set("domain", domainFilter);
+    if (whatsappStageFilter !== "all") params.set("whatsappStage", whatsappStageFilter);
     let response: Response;
     try {
       response = await fetch(`/api/dashboard?${params.toString()}`, {
@@ -391,7 +409,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [ambassadorPage, dateRange, debouncedSearch, expectedRole, groupFilter, memberFilter, page, reportingViewKey, router, teamFilter]);
+  }, [ambassadorPage, dateRange, debouncedSearch, domainFilter, expectedRole, groupFilter, memberFilter, page, reportingViewKey, router, statusFilter, teamFilter, whatsappStageFilter]);
 
   const scheduleReconciliation = useCallback(() => {
     if (reconcileTimer.current) window.clearTimeout(reconcileTimer.current);
@@ -443,6 +461,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     if (groupFilter !== "all") params.set("groupId", groupFilter);
     if (dateRange !== "all") params.set("dateRange", dateRange);
     if (debouncedSearch) params.set("search", debouncedSearch);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (domainFilter !== "all") params.set("domain", domainFilter);
+    if (whatsappStageFilter !== "all") params.set("whatsappStage", whatsappStageFilter);
 
     let response: Response;
     try {
@@ -485,6 +506,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
             groupId: groupFilter,
             dateRange,
             search: debouncedSearch,
+            status: statusFilter,
+            domain: domainFilter,
+            whatsappStage: whatsappStageFilter,
           }) &&
           (existed || current.pagination.page === 1)
         ) {
@@ -595,7 +619,7 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       setAmbassadorPage(update.ambassadorPagination.page);
     }
     scheduleReconciliation();
-  }, [ambassadorPage, dateRange, debouncedSearch, groupFilter, load, memberFilter, page, reportingViewKey, scheduleReconciliation, teamFilter]);
+  }, [ambassadorPage, dateRange, debouncedSearch, domainFilter, groupFilter, load, memberFilter, page, reportingViewKey, scheduleReconciliation, statusFilter, teamFilter, whatsappStageFilter]);
 
   const loadLiveEventRef = useRef(loadLiveEvent);
 
@@ -776,6 +800,9 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
       if (groupFilter !== "all") params.set("groupId", groupFilter);
       if (dateRange !== "all") params.set("dateRange", dateRange);
       if (debouncedSearch) params.set("search", debouncedSearch);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (domainFilter !== "all") params.set("domain", domainFilter);
+      if (whatsappStageFilter !== "all") params.set("whatsappStage", whatsappStageFilter);
     } else if (effectiveExportScope === "group" && groupFilter !== "all") {
       params.set("groupId", groupFilter);
     }
@@ -815,6 +842,15 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     if (nextTab !== "leads" && (search || debouncedSearch)) {
       setSearch("");
       setDebouncedSearch("");
+      setPage(1);
+    }
+    if (
+      nextTab !== "leads" &&
+      (statusFilter !== "all" || domainFilter !== "all" || whatsappStageFilter !== "all")
+    ) {
+      setStatusFilter("all");
+      setDomainFilter("all");
+      setWhatsappStageFilter("all");
       setPage(1);
     }
     setTab(nextTab);
@@ -858,21 +894,18 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
     );
   });
 
-  const filteredRegistrations = data.registrations.filter((lead) => {
-    const needle = search.toLowerCase();
-    return (
-      (teamFilter === "all" || lead.owner_team_id === teamFilter) &&
-      (memberFilter === "all" || lead.owner_sales_id === memberFilter) &&
-      (groupFilter === "all" || lead.ambassador_id === groupFilter) &&
-      inDateRange(lead.created_at, dateRange) &&
-      (
-        !needle ||
-        lead.name.toLowerCase().includes(needle) ||
-        lead.phone.includes(needle) ||
-        lead.preferred_domain.toLowerCase().includes(needle)
-      )
-    );
-  });
+  const filteredRegistrations = data.registrations.filter((lead) =>
+    registrationMatchesView(lead, {
+      teamId: teamFilter,
+      memberId: memberFilter,
+      groupId: groupFilter,
+      dateRange,
+      search,
+      status: statusFilter,
+      domain: domainFilter,
+      whatsappStage: whatsappStageFilter,
+    }),
+  );
 
   return (
     <div className="dashboard-shell">
@@ -1193,6 +1226,29 @@ export function DashboardApp({ expectedRole }: { expectedRole: AppRole }) {
                 onDateRangeChange={(value) => {
                   setDateRange(value);
                   setGroupFilter("all");
+                  setPage(1);
+                }}
+              />
+              <RegistrationAdvancedFilters
+                status={statusFilter}
+                domain={domainFilter}
+                whatsappStage={whatsappStageFilter}
+                onStatusChange={(value) => {
+                  setStatusFilter(value);
+                  setPage(1);
+                }}
+                onDomainChange={(value) => {
+                  setDomainFilter(value);
+                  setPage(1);
+                }}
+                onWhatsAppStageChange={(value) => {
+                  setWhatsappStageFilter(value);
+                  setPage(1);
+                }}
+                onClear={() => {
+                  setStatusFilter("all");
+                  setDomainFilter("all");
+                  setWhatsappStageFilter("all");
                   setPage(1);
                 }}
               />
@@ -1673,6 +1729,85 @@ function ReportingFilters({
   );
 }
 
+function RegistrationAdvancedFilters({
+  status,
+  domain,
+  whatsappStage,
+  onStatusChange,
+  onDomainChange,
+  onWhatsAppStageChange,
+  onClear,
+}: {
+  status: RegistrationStatus | "all";
+  domain: string;
+  whatsappStage: WhatsAppStage | "all";
+  onStatusChange: (value: RegistrationStatus | "all") => void;
+  onDomainChange: (value: string) => void;
+  onWhatsAppStageChange: (value: WhatsAppStage | "all") => void;
+  onClear: () => void;
+}) {
+  const activeCount = [status, domain, whatsappStage].filter(
+    (value) => value !== "all",
+  ).length;
+
+  return (
+    <div className="registration-advanced-filters">
+      <div className="advanced-filter-heading">
+        <Settings2 size={17} />
+        <span>
+          <strong>Lead filters</strong>
+          <small>{activeCount ? `${activeCount} active` : "Status, domain and WhatsApp"}</small>
+        </span>
+      </div>
+      <label>
+        Registration status
+        <select
+          value={status}
+          onChange={(event) =>
+            onStatusChange(event.target.value as RegistrationStatus | "all")
+          }
+        >
+          <option value="all">All statuses</option>
+          {Object.entries(statusLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Internship domain
+        <select value={domain} onChange={(event) => onDomainChange(event.target.value)}>
+          <option value="all">All domains</option>
+          {internshipDomainNames.map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        WhatsApp stage
+        <select
+          value={whatsappStage}
+          onChange={(event) =>
+            onWhatsAppStageChange(event.target.value as WhatsAppStage | "all")
+          }
+        >
+          <option value="all">All WhatsApp stages</option>
+          {Object.entries(whatsappStageLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="clear-filter-button"
+        disabled={!activeCount}
+        onClick={onClear}
+      >
+        <X size={15} /> Clear
+      </button>
+    </div>
+  );
+}
+
 function GroupSearchFilter({
   teamId,
   memberId,
@@ -1895,12 +2030,14 @@ function TeamsView({
   onUpdate: DashboardUpdater;
   onReconcile: () => void;
 }) {
-  const teamLeadByTeam = new Map<string, Profile>();
+  const teamLeadsByTeam = new Map<string, Profile[]>();
   data.employees
     .filter((employee) => employee.role === "team_lead")
     .forEach((employee) => {
       for (const teamId of employee.managed_team_ids) {
-        teamLeadByTeam.set(teamId, employee);
+        const assigned = teamLeadsByTeam.get(teamId) ?? [];
+        assigned.push(employee);
+        teamLeadsByTeam.set(teamId, assigned);
       }
     });
   async function toggleTeam(id: string, active: boolean) {
@@ -1959,12 +2096,12 @@ function TeamsView({
       <div className="table-toolbar">
         <div>
           <h2>Organization teams</h2>
-          <p>Create teams, assign Sales members, and let one Team Lead manage one or several teams.</p>
+          <p>Create teams, assign Sales members, and appoint one or more Team Leads wherever needed.</p>
         </div>
       </div>
       <div className="card-grid">
         {data.teams.map((team) => {
-          const lead = teamLeadByTeam.get(team.id);
+          const leads = teamLeadsByTeam.get(team.id) ?? [];
           const pending = team.id.startsWith("pending-");
           return (
             <article className="team-card" key={team.id}>
@@ -1975,7 +2112,11 @@ function TeamsView({
                 </span>
               </div>
               <h3>{team.name}</h3>
-              <p>{lead ? `Led by ${lead.full_name}` : "Team Lead not assigned"}</p>
+              <p>
+                {leads.length
+                  ? `Led by ${leads.map((lead) => lead.full_name).join(", ")}`
+                  : "Team Lead not assigned"}
+              </p>
               <div className="team-stats">
                 <span><strong>{team.sales_count}</strong> Sales</span>
                 <span><strong>{team.ambassador_count}</strong> CAs</span>
@@ -2026,7 +2167,22 @@ function EmployeesView({
   onUpdate: DashboardUpdater;
   onReconcile: () => void;
 }) {
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const teamNames = new Map(data.teams.map((team) => [team.id, team.name]));
+  const employeeNeedle = employeeSearch.trim().toLowerCase();
+  const visibleEmployees = data.employees.filter((employee) => {
+    if (!employeeNeedle) return true;
+    const teamValues = [employee.team_id, ...employee.managed_team_ids]
+      .filter((value): value is string => Boolean(value))
+      .map((teamId) => teamNames.get(teamId) ?? "");
+    return [
+      employee.full_name,
+      employee.email,
+      employee.phone,
+      roleLabel(employee.role),
+      ...teamValues,
+    ].some((value) => value.toLowerCase().includes(employeeNeedle));
+  });
 
   async function patchEmployee(id: string, body: Record<string, unknown>) {
     const previous = data.employees.find((employee) => employee.id === id);
@@ -2046,7 +2202,9 @@ function EmployeesView({
       ? (
           Array.isArray(body.teamIds)
             ? body.teamIds.filter((value): value is string => typeof value === "string")
-            : previous.managed_team_ids
+            : previous.managed_team_ids.length
+              ? previous.managed_team_ids
+              : (nextTeamId ? [nextTeamId] : [])
         )
       : (nextTeamId ? [nextTeamId] : []);
     const teamChanged = nextTeamId !== previous.team_id;
@@ -2250,6 +2408,28 @@ function EmployeesView({
               : "Performance and assignments inside your team."}
           </p>
         </div>
+        <div className="employee-search-control">
+          <label className="search-box">
+            <Search size={17} />
+            <input
+              value={employeeSearch}
+              onChange={(event) => setEmployeeSearch(event.target.value)}
+              placeholder="Search name, email, phone, role, or team"
+              aria-label="Search employees"
+            />
+            {employeeSearch && (
+              <button
+                type="button"
+                className="search-clear-button"
+                aria-label="Clear employee search"
+                onClick={() => setEmployeeSearch("")}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </label>
+          <small>{visibleEmployees.length} of {data.employees.length} employees</small>
+        </div>
       </div>
       <div className="data-table">
         <div className={`data-row employee-grid ${data.user.role === "admin" ? "with-wati" : ""} table-header`}>
@@ -2257,7 +2437,7 @@ function EmployeesView({
           {data.user.role === "admin" && <span>WATI</span>}
           <span>Performance</span><span />
         </div>
-        {data.employees.map((employee) => {
+        {visibleEmployees.map((employee) => {
           const pending = employee.id.startsWith("pending-");
           const performance = data.salesPerformance.find(
             (item) => item.id === employee.id,
@@ -2400,6 +2580,11 @@ function EmployeesView({
             </div>
           );
         })}
+        {!visibleEmployees.length && (
+          <div className="employee-search-empty">
+            No employee matches “{employeeSearch.trim()}”.
+          </div>
+        )}
       </div>
     </section>
   );

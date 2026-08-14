@@ -2,6 +2,11 @@ import Papa from "papaparse";
 import { requireApiProfile } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
 import { reportingRangeStart } from "@/lib/reporting-date";
+import {
+  optionalInternshipDomain,
+  optionalRegistrationStatus,
+  optionalWhatsAppStage,
+} from "@/lib/registration-filters";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import type { RegistrationStatus } from "@/lib/types";
 import { resolveOperationalTeam } from "@/lib/team-access";
@@ -127,6 +132,15 @@ export async function GET(request: Request) {
   const requestedGroupId = optionalUuid(params.get("groupId"));
   const startAt = reportingRangeStart(params.get("dateRange"))?.toISOString() ?? null;
   const search = safeSearch(params.get("search"));
+  const status = mode === "current"
+    ? optionalRegistrationStatus(params.get("status"))
+    : null;
+  const domain = mode === "current"
+    ? optionalInternshipDomain(params.get("domain"))
+    : null;
+  const whatsappStage = mode === "current"
+    ? optionalWhatsAppStage(params.get("whatsappStage"))
+    : null;
 
   if (mode === "group" && !requestedGroupId) {
     return errorResponse("Select a group before exporting it.", 400);
@@ -159,9 +173,9 @@ export async function GET(request: Request) {
   for (let offset = 0; ; offset += batchSize) {
     let query = admin
       .from("registrations")
-      .select(
-        "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at",
-      )
+      .select(whatsappStage
+        ? "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at,whatsapp:whatsapp_conversations!inner(id,state)"
+        : "id,ambassador_id,credited_sales_id,credited_team_id,owner_sales_id,owner_team_id,name,phone,preferred_domain,status,note,created_at,updated_at,anonymized_at")
       .order("created_at", { ascending: false });
 
     if (teamId) query = query.eq("owner_team_id", teamId);
@@ -179,6 +193,9 @@ export async function GET(request: Request) {
         `name.ilike.${pattern},phone.ilike.${pattern},preferred_domain.ilike.${pattern}`,
       );
     }
+    if (status) query = query.eq("status", status);
+    if (domain) query = query.eq("preferred_domain", domain);
+    if (whatsappStage) query = query.eq("whatsapp.state", whatsappStage);
 
     const result = await query.range(offset, offset + batchSize - 1);
     if (result.error) return errorResponse("Unable to export registrations.", 500);

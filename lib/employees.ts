@@ -59,17 +59,6 @@ export async function createEmployee(
     throw new Error("Select active teams only.");
   }
 
-  if (role === "team_lead") {
-    const { data: occupied } = await admin
-      .from("team_lead_teams")
-      .select("team_id")
-      .in("team_id", teamIds)
-      .limit(1);
-    if (occupied?.length) {
-      throw new Error("One of the selected teams already has a Team Lead.");
-    }
-  }
-
   const { data, error: authError } = await admin.auth.admin.createUser({
     email,
     password,
@@ -93,11 +82,7 @@ export async function createEmployee(
 
   if (profileError) {
     await admin.auth.admin.deleteUser(data.user.id);
-    throw new Error(
-      profileError.message.includes("one_active_team_lead")
-        ? "This team already has an active Team Lead."
-        : profileError.message,
-    );
+    throw new Error(profileError.message);
   }
 
   if (role === "team_lead") {
@@ -109,11 +94,7 @@ export async function createEmployee(
       })));
     if (assignmentError) {
       await admin.auth.admin.deleteUser(data.user.id);
-      throw new Error(
-        assignmentError.message.includes("team_lead_teams_team_id_key")
-          ? "One of the selected teams already has a Team Lead."
-          : "Unable to assign the Team Lead's teams.",
-      );
+      throw new Error("Unable to assign the Team Lead's teams.");
     }
   }
 

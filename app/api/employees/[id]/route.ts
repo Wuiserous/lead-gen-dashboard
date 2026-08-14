@@ -90,13 +90,7 @@ export async function PATCH(
       p_team_ids: nextTeamIds,
     });
     if (error) {
-      return errorResponse(
-        error.message.includes("one_active_team_lead") ||
-          error.message.includes("TEAM_LEAD_ALREADY_ASSIGNED")
-          ? "The selected team already has an active Team Lead."
-          : "Unable to update the employee.",
-        409,
-      );
+      return errorResponse("Unable to update the employee.", 409);
     }
   }
 
