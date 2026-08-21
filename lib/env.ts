@@ -62,6 +62,11 @@ export function watiEnv() {
       4,
       10,
     ),
+    fallbackDelaySeconds: boundedInteger(
+      process.env.WATI_FALLBACK_DELAY_SECONDS,
+      5,
+      20,
+    ),
   };
 }
 

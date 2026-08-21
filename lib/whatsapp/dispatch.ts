@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { watiConfigured, watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
+import { nextWhatsAppFlow, type FlowResult } from "@/lib/whatsapp/flow";
 import {
+  sendWatiButtons,
+  sendWatiList,
   sendWatiTemplate,
   sendWatiText,
   WatiApiError,
@@ -307,6 +310,153 @@ async function sendManualTextJob(
   await markMessageSent(prepared.id, conversation, result);
 }
 
+const fallbackConversationColumns = new Set([
+  "unknown_reply_count",
+  "opted_out_at",
+  "follow_up_at",
+]);
+
+function safeFallbackUpdates(result: FlowResult) {
+  return Object.fromEntries(
+    Object.entries(result.updates).filter(([key]) =>
+      fallbackConversationColumns.has(key),
+    ),
+  );
+}
+
+async function nativeReplyAlreadyHandled(
+  conversationId: string,
+  inboundMessageId: string,
+) {
+  const admin = createAdminSupabase();
+  const { data: inbound, error: inboundError } = await admin
+    .from("whatsapp_messages")
+    .select("id,body,created_at,sent_at")
+    .eq("id", inboundMessageId)
+    .eq("conversation_id", conversationId)
+    .eq("direction", "inbound")
+    .maybeSingle();
+  if (inboundError) throw new Error("Unable to inspect the inbound WhatsApp message.");
+  if (!inbound) {
+    throw new WatiApiError("The inbound WhatsApp message no longer exists.", 404, false);
+  }
+
+  const receivedAt = inbound.sent_at ?? inbound.created_at;
+  const [newerInboundResult, outboundResult] = await Promise.all([
+    admin
+      .from("whatsapp_messages")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .eq("direction", "inbound")
+      .gt("created_at", inbound.created_at)
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from("whatsapp_messages")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .eq("direction", "outbound")
+      .in("status", ["sending", "sent", "delivered", "read"])
+      .gt("created_at", receivedAt)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (newerInboundResult.error || outboundResult.error) {
+    throw new Error("Unable to verify the WATI native response.");
+  }
+
+  return {
+    inboundBody: String(inbound.body ?? ""),
+    handled: Boolean(newerInboundResult.data || outboundResult.data),
+  };
+}
+
+async function cancelPendingAutomation(
+  job: WhatsAppJob,
+  result: FlowResult,
+) {
+  if (!result.cancelPending) return;
+  await createAdminSupabase()
+    .from("whatsapp_jobs")
+    .update({
+      status: "cancelled",
+      completed_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
+      last_error: "Cancelled after the student replied.",
+    })
+    .eq("conversation_id", job.conversation_id)
+    .eq("status", "pending")
+    .eq("job_type", "send_template");
+}
+
+async function sendInboundFallbackJob(
+  job: WhatsAppJob,
+  conversation: Conversation,
+  registration: RegistrationContext,
+) {
+  if (job.payload.response_mode !== "wati_native_fallback") {
+    // Drain process_inbound jobs created by older application versions
+    // without reviving the retired always-on internal responder.
+    return;
+  }
+  const inboundMessageId = String(job.payload.inbound_message_id ?? "").trim();
+  if (!inboundMessageId) {
+    throw new WatiApiError("The fallback job has no inbound message.", 400, false);
+  }
+
+  const check = await nativeReplyAlreadyHandled(conversation.id, inboundMessageId);
+  if (check.handled) return;
+
+  const flow = nextWhatsAppFlow(
+    {
+      conversation,
+      name: registration.name,
+      domain: registration.preferred_domain,
+    },
+    check.inboundBody,
+  );
+  const prepared = await createOutboundMessage(job, {
+    body: flow.message.body,
+    messageType: flow.message.kind,
+    intent: "internal_fallback",
+  });
+  if (prepared.alreadyAttempted) return;
+
+  const result = flow.message.kind === "buttons"
+    ? await sendWatiButtons({
+        target: registration.phone,
+        header: flow.message.header,
+        body: flow.message.body,
+        buttons: flow.message.buttons,
+      })
+    : flow.message.kind === "list"
+      ? await sendWatiList({
+          target: registration.phone,
+          header: flow.message.header,
+          body: flow.message.body,
+          buttonText: flow.message.buttonText,
+          sectionTitle: flow.message.sectionTitle,
+          rows: flow.message.rows,
+        })
+      : await sendWatiText(registration.phone, flow.message.body);
+
+  await markMessageSent(prepared.id, conversation, result);
+  const updates = safeFallbackUpdates(flow);
+  if (Object.keys(updates).length) {
+    const { error } = await createAdminSupabase()
+      .from("whatsapp_conversations")
+      .update(updates)
+      .eq("id", conversation.id);
+    if (error) {
+      // The reply has already left WATI. Do not retry and risk sending it
+      // twice merely because a non-critical local flow-field update failed.
+      console.error("Unable to save non-critical WhatsApp fallback flow fields", error);
+    }
+  }
+  await cancelPendingAutomation(job, flow);
+}
+
 async function executeJob(job: WhatsAppJob) {
   const { conversation, registration, employeeWatiEnabled } = await loadJobContext(job);
   if (!employeeWatiEnabled) {
@@ -319,10 +469,7 @@ async function executeJob(job: WhatsAppJob) {
   if (job.job_type === "send_template") {
     await sendTemplateJob(job, conversation, registration);
   } else if (job.job_type === "process_inbound") {
-    // Automatic inbound replies are owned by WATI's native chatbot. Keeping
-    // this no-op also drains any process_inbound jobs queued before cutover
-    // without sending duplicate WhatsApp messages.
-    return;
+    await sendInboundFallbackJob(job, conversation, registration);
   } else if (job.job_type === "manual_text") {
     await sendManualTextJob(job, conversation, registration);
   } else {
@@ -349,7 +496,9 @@ async function failJob(job: WhatsAppJob, error: unknown) {
   const attempts = job.attempts + 1;
   const retryable = !(error instanceof WatiApiError) || error.retryable;
   const willRetry = retryable && attempts < job.max_attempts;
-  const exponentialDelayMs = Math.min(60, 2 ** attempts) * 60_000;
+  const exponentialDelayMs = job.job_type === "process_inbound"
+    ? [10_000, 30_000, 60_000, 5 * 60_000][Math.min(attempts - 1, 3)]
+    : Math.min(60, 2 ** attempts) * 60_000;
   const retryDelayMs =
     error instanceof WatiApiError && error.retryAfterMs !== null
       ? Math.max(exponentialDelayMs, error.retryAfterMs)

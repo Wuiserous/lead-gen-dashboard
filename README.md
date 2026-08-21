@@ -51,6 +51,8 @@ variables:
 - `WATI_REMINDER_TEMPLATE` (defaults to `persevex_lead_reminder_v1`)
 - `WATI_FINAL_REMINDER_TEMPLATE` (defaults to `persevex_lead_final_reminder_v1`)
 - `WATI_DISPATCH_CONCURRENCY` (optional, defaults to `4`; keep at or below `10`)
+- `WATI_FALLBACK_DELAY_SECONDS` (optional, defaults to `5`; native WATI gets
+  this response window before the internal flow takes over)
 - `RESEND_API_KEY` (server-side Resend API key)
 - `RESEND_FROM_EMAIL` (for example `Persevex <support@persevex.com>`)
 - `RESEND_REPLY_TO` (the monitored inbox for Campus Ambassador replies)
@@ -76,6 +78,11 @@ who need access to the Vercel project itself need Vercel membership.
   into every browser.
 - WATI and Resend jobs use bounded concurrency and idempotent database claims.
   WATI `Retry-After` instructions are respected before retrying throttled jobs.
+- Every inbound WhatsApp reply creates one delayed, deduplicated fallback job.
+  A native WATI response completes the job without another message; when WATI
+  does not answer within the configured window, the internal conversation flow
+  responds through the WATI API. This prevents silent stalls when WATI's
+  Automation Trigger allowance is exhausted.
 - Processed WATI/Resend webhook envelopes are retained for 30 days and transient
   dashboard activity for 14 days. Leads, groups, chat messages, email delivery
   records, audit events, and employee records are not removed by this cleanup.
@@ -250,6 +257,14 @@ Enable at least:
 The endpoint stores every event once, using WATI/WhatsApp message identifiers
 for deduplication. Unknown contacts are retained as ignored webhook audit rows
 and never create phantom registrations.
+
+For each valid inbound reply, the endpoint also schedules an internal fallback
+for five seconds later. The fallback checks the stored message timeline before
+sending: if WATI's native chatbot has already answered—or the student has sent
+a newer reply—the job completes without sending. Otherwise the internal flow
+sends the appropriate text, button, or list response through the WATI API. The
+job ID and dedupe key ensure that immediate dispatch and the retry worker cannot
+send the same fallback twice.
 
 ### 4. Schedule the durable dispatcher
 

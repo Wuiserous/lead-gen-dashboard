@@ -126,7 +126,7 @@ function faqAnswer(intent: string): string | null {
     return "Applicable training, internship and performance certificates are issued after their respective completion requirements are met. Your advisor can show the current certificate formats.";
   }
   if (includesAny(intent, ["stipend", "salary", "earn"])) {
-    return "Up to ₹18K–₹25K stipend based on performance. Eligibility is performance-based and is not guaranteed at the registration stage.";
+    return "Up to ₹18K–₹25K stipend based on performance.";
   }
   if (includesAny(intent, ["eligibility", "eligible"])) {
     return "The opportunity is open to eligible college students across supported domains. Previous experience is not required; the team will confirm your final eligibility.";

@@ -1,7 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
+import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
 import { deriveWatiLeadAnalytics } from "@/lib/whatsapp/lead-analytics";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,13 @@ type WebhookProcessResult = {
   duplicate?: boolean;
   ignored?: boolean;
   processed?: boolean;
+  fallbackJobId?: string;
+  fallbackDelayMs?: number;
 };
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 function safeEqual(left: string, right: string) {
   const leftDigest = createHash("sha256").update(left).digest();
@@ -318,6 +325,8 @@ async function processWebhook(
   const employeeWatiEnabled = Boolean(
     assignedEmployee?.active && assignedEmployee?.wati_enabled,
   );
+  let fallbackJobId: string | null = null;
+  let fallbackDelayMs = 0;
 
   if (incomingEvent(payload)) {
     const whatsappMessageId = stringValue(payload.whatsappMessageId) || null;
@@ -344,7 +353,7 @@ async function processWebhook(
       Date.parse(occurredAt) > Date.parse(conversation.last_inbound_at)
         ? occurredAt
         : conversation.last_inbound_at;
-    const { error: messageError } = await admin
+    const { data: inboundMessage, error: messageError } = await admin
       .from("whatsapp_messages")
       .insert({
         conversation_id: conversation.id,
@@ -356,8 +365,12 @@ async function processWebhook(
         status: "received",
         sent_at: occurredAt,
         created_at: occurredAt,
-      });
-    if (messageError) throw new Error("Unable to store the incoming WhatsApp message.");
+      })
+      .select("id")
+      .single();
+    if (messageError || !inboundMessage) {
+      throw new Error("Unable to store the incoming WhatsApp message.");
+    }
 
     const { data: inboundMessages, error: inboundMessagesError } = await admin
       .from("whatsapp_messages")
@@ -407,10 +420,33 @@ async function processWebhook(
       })
       .eq("id", conversation.id);
 
-    // WATI's native chatbot is the sole automatic inbound responder. The app
-    // stores inbound messages and updates dashboards, but must never enqueue a
-    // second reply for the same student action.
-    if (!employeeWatiEnabled) {
+    if (employeeWatiEnabled && body) {
+      const delaySeconds = watiEnv().fallbackDelaySeconds;
+      const scheduledFor = new Date(Date.now() + delaySeconds * 1_000).toISOString();
+      const { data: fallbackJob, error: fallbackJobError } = await admin
+        .from("whatsapp_jobs")
+        .insert({
+          conversation_id: conversation.id,
+          registration_id: conversation.registration_id,
+          job_type: "process_inbound",
+          payload: {
+            inbound_message_id: inboundMessage.id,
+            inbound_body: body,
+            inbound_received_at: occurredAt,
+            response_mode: "wati_native_fallback",
+          },
+          dedupe_key: `inbound-fallback:${inboundMessage.id}`,
+          scheduled_for: scheduledFor,
+          max_attempts: 5,
+        })
+        .select("id")
+        .single();
+      if (fallbackJobError || !fallbackJob) {
+        throw new Error("Unable to schedule the WhatsApp fallback response.");
+      }
+      fallbackJobId = fallbackJob.id;
+      fallbackDelayMs = delaySeconds * 1_000;
+    } else if (!employeeWatiEnabled) {
       await admin
         .from("whatsapp_conversations")
         .update({ bot_paused: true })
@@ -462,7 +498,12 @@ async function processWebhook(
     .from("whatsapp_webhook_events")
     .update({ processed_at: new Date().toISOString(), processing_error: null })
     .eq("id", event.id);
-  return { processed: true };
+  return {
+    processed: true,
+    ...(fallbackJobId
+      ? { fallbackJobId, fallbackDelayMs }
+      : {}),
+  };
 }
 
 export async function POST(request: Request) {
@@ -491,6 +532,20 @@ export async function POST(request: Request) {
 
   try {
     const result = await processWebhook(payload, rawBody);
+    if (result.fallbackJobId) {
+      const jobId = result.fallbackJobId;
+      const delayMs = result.fallbackDelayMs ?? 5_000;
+      after(async () => {
+        try {
+          await wait(delayMs);
+          await dispatchWhatsAppJob(jobId);
+        } catch (fallbackError) {
+          // The durable pending job remains available to the cron/dashboard
+          // workers even when this immediate attempt is interrupted.
+          console.error("Immediate WhatsApp fallback dispatch failed", fallbackError);
+        }
+      });
+    }
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     console.error("WATI webhook processing failed", error);
