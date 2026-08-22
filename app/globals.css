@@ -7226,6 +7226,94 @@ p {
   }
 }
 
+.wati-fallback-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 20px 22px;
+  border: 1px solid #bfdacb;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f4fff9, #ffffff 68%);
+  box-shadow: 0 12px 34px rgba(7, 45, 31, 0.06);
+}
+
+.wati-fallback-control.fallback-active {
+  border-color: #f0bd32;
+  background: linear-gradient(135deg, #fff8dc, #ffffff 68%);
+}
+
+.wati-fallback-heading,
+.wati-fallback-actions,
+.wati-mode-selector {
+  display: flex;
+  align-items: center;
+}
+
+.wati-fallback-heading { gap: 14px; }
+.wati-fallback-heading h3 { margin: 2px 0 4px; }
+.wati-fallback-heading p { margin: 0; color: #52627a; }
+
+.wati-fallback-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  place-items: center;
+  border-radius: 14px;
+  color: #087a4e;
+  background: #dff7eb;
+}
+
+.fallback-active .wati-fallback-icon {
+  color: #7a5200;
+  background: #ffdf79;
+}
+
+.wati-fallback-actions { gap: 10px; }
+.wati-mode-selector {
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #edf1f7;
+}
+
+.wati-mode-selector button {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 9px;
+  color: #52627a;
+  background: transparent;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.wati-mode-selector button.selected {
+  color: #fff;
+  background: #071d49;
+  box-shadow: 0 4px 12px rgba(7, 29, 73, 0.2);
+}
+
+.wati-mode-selector button:disabled { cursor: wait; opacity: 0.65; }
+.wati-fallback-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8a5a00;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .wati-fallback-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .wati-fallback-actions { justify-content: space-between; }
+  .wati-mode-selector { overflow-x: auto; }
+  .wati-mode-selector button { white-space: nowrap; }
+}
+
 /* CA progress: keep performance and registration details above the fold. */
 
 @media (min-width: 901px) {

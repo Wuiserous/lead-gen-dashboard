@@ -27,6 +27,7 @@ export type FlowMessage =
 export type FlowResult = {
   message: FlowMessage;
   updates: Record<string, string | number | boolean | null>;
+  recognized?: boolean;
   cancelPending?: boolean;
   assignHuman?: boolean;
 };
@@ -384,6 +385,7 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
       },
       cancelPending: true,
       assignHuman: true,
+      recognized: false,
     };
   }
 
@@ -394,5 +396,6 @@ export function nextWhatsAppFlow(context: FlowContext, rawReply: string): FlowRe
       buttons: ["Program details", "Talk to advisor", "View FAQs"],
     },
     updates: { unknown_reply_count: nextUnknownCount },
+    recognized: false,
   };
 }

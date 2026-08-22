@@ -3,6 +3,11 @@ import { after, NextResponse } from "next/server";
 import { watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
+import {
+  fallbackDelayMs as fallbackDelayForPolicy,
+  readWatiFallbackPolicy,
+} from "@/lib/whatsapp/fallback-circuit";
+import { outboundBodiesMatch } from "@/lib/whatsapp/message-match";
 import { deriveWatiLeadAnalytics } from "@/lib/whatsapp/lead-analytics";
 
 export const dynamic = "force-dynamic";
@@ -181,11 +186,11 @@ async function syncOutboundMessage(
   const messageType = stringValue(payload.type || "message").toLowerCase();
   const templateName = stringValue(payload.templateName) || null;
 
-  let existing: { id: string; status: string } | null = null;
+  let existing: { id: string; status: string; intent?: string | null } | null = null;
   if (localMessageId) {
     const { data, error } = await admin
       .from("whatsapp_messages")
-      .select("id,status")
+      .select("id,status,intent")
       .eq("wati_local_message_id", localMessageId)
       .maybeSingle();
     if (error) throw new Error("Unable to match the WATI outbound message.");
@@ -194,7 +199,7 @@ async function syncOutboundMessage(
   if (!existing && whatsappMessageId) {
     const { data, error } = await admin
       .from("whatsapp_messages")
-      .select("id,status")
+      .select("id,status,intent")
       .eq("whatsapp_message_id", whatsappMessageId)
       .maybeSingle();
     if (error) throw new Error("Unable to match the WhatsApp outbound message.");
@@ -204,7 +209,7 @@ async function syncOutboundMessage(
     const occurredAtMs = Date.parse(occurredAt);
     const { data, error } = await admin
       .from("whatsapp_messages")
-      .select("id,status,body,template_name")
+      .select("id,status,intent,body,template_name")
       .eq("conversation_id", conversation.id)
       .eq("direction", "outbound")
       .is("wati_local_message_id", null)
@@ -217,14 +222,19 @@ async function syncOutboundMessage(
     const candidate = (data ?? []).find((message: {
       id: string;
       status: string;
+      intent: string | null;
       body: string;
       template_name: string | null;
     }) =>
       templateName
         ? message.template_name === templateName
-        : Boolean(body && message.body.trim() === body.trim()),
+        : Boolean(body && outboundBodiesMatch(message.body, body)),
     );
-    if (candidate) existing = { id: candidate.id, status: candidate.status };
+    if (candidate) existing = {
+      id: candidate.id,
+      status: candidate.status,
+      intent: candidate.intent,
+    };
   }
 
   const finalStatus = existing
@@ -234,7 +244,7 @@ async function syncOutboundMessage(
     direction: "outbound",
     message_type: messageType,
     ...(body ? { body } : {}),
-    ...(status === "sent" || !existing ? { intent: outboundIntent(payload) } : {}),
+    ...(!existing ? { intent: outboundIntent(payload) } : {}),
     ...(templateName ? { template_name: templateName } : {}),
     ...(localMessageId ? { wati_local_message_id: localMessageId } : {}),
     ...(whatsappMessageId ? { whatsapp_message_id: whatsappMessageId } : {}),
@@ -421,8 +431,17 @@ async function processWebhook(
       .eq("id", conversation.id);
 
     if (employeeWatiEnabled && body) {
-      const delaySeconds = watiEnv().fallbackDelaySeconds;
-      const scheduledFor = new Date(Date.now() + delaySeconds * 1_000).toISOString();
+      const policy = await readWatiFallbackPolicy();
+      const delayMs = fallbackDelayForPolicy(policy);
+      if (policy.mode === "wati") {
+        await recordActivity(updatedConversation);
+        await admin
+          .from("whatsapp_webhook_events")
+          .update({ processed_at: new Date().toISOString(), processing_error: null })
+          .eq("id", event.id);
+        return { processed: true };
+      }
+      const scheduledFor = new Date(Date.now() + delayMs).toISOString();
       const { data: fallbackJob, error: fallbackJobError } = await admin
         .from("whatsapp_jobs")
         .insert({
@@ -434,6 +453,7 @@ async function processWebhook(
             inbound_body: body,
             inbound_received_at: occurredAt,
             response_mode: "wati_native_fallback",
+            reply_policy: policy.effectiveInternal ? "internal" : "observe_wati",
           },
           dedupe_key: `inbound-fallback:${inboundMessage.id}`,
           scheduled_for: scheduledFor,
@@ -445,7 +465,7 @@ async function processWebhook(
         throw new Error("Unable to schedule the WhatsApp fallback response.");
       }
       fallbackJobId = fallbackJob.id;
-      fallbackDelayMs = delaySeconds * 1_000;
+      fallbackDelayMs = delayMs;
     } else if (!employeeWatiEnabled) {
       await admin
         .from("whatsapp_conversations")

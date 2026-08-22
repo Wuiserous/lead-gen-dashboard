@@ -50,6 +50,7 @@ import {
 import { buildWhatsAppDraft, shareCreatives } from "@/lib/share-creatives";
 import { internshipDomainNames } from "@/lib/domains";
 import { PerformanceLeaderboard } from "@/components/performance-leaderboard";
+import { WatiFallbackControl } from "@/components/wati-fallback-control";
 import type {
   AmbassadorPerformance,
   AppRole,
@@ -2399,6 +2400,7 @@ function EmployeesView({
 
   return (
     <section>
+      {data.user.role === "admin" && <WatiFallbackControl />}
       <div className="table-toolbar">
         <div>
           <h2>{data.user.role === "admin" ? "Employee access" : "Assigned team"}</h2>

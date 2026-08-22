@@ -4,6 +4,10 @@ import { watiConfigured, watiEnv } from "@/lib/env";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { nextWhatsAppFlow, type FlowResult } from "@/lib/whatsapp/flow";
 import {
+  readWatiFallbackPolicy,
+  recordWatiFallbackObservation,
+} from "@/lib/whatsapp/fallback-circuit";
+import {
   sendWatiButtons,
   sendWatiList,
   sendWatiTemplate,
@@ -406,8 +410,6 @@ async function sendInboundFallbackJob(
   }
 
   const check = await nativeReplyAlreadyHandled(conversation.id, inboundMessageId);
-  if (check.handled) return;
-
   const flow = nextWhatsAppFlow(
     {
       conversation,
@@ -416,6 +418,20 @@ async function sendInboundFallbackJob(
     },
     check.inboundBody,
   );
+  const recognized = flow.recognized !== false;
+  const policy = await readWatiFallbackPolicy();
+
+  if (check.handled) {
+    if (recognized && policy.mode === "auto") {
+      await recordWatiFallbackObservation("hit");
+    }
+    return;
+  }
+  if (policy.mode === "wati") return;
+  if (recognized && policy.mode === "auto" && !policy.effectiveInternal) {
+    await recordWatiFallbackObservation("miss");
+  }
+
   const prepared = await createOutboundMessage(job, {
     body: flow.message.body,
     messageType: flow.message.kind,

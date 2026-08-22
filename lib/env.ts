@@ -62,10 +62,21 @@ export function watiEnv() {
       4,
       10,
     ),
-    fallbackDelaySeconds: boundedInteger(
-      process.env.WATI_FALLBACK_DELAY_SECONDS,
-      5,
-      20,
+    fallbackObservationSeconds: boundedInteger(
+      process.env.WATI_FALLBACK_OBSERVATION_SECONDS ??
+        process.env.WATI_FALLBACK_DELAY_SECONDS,
+      8,
+      30,
+    ),
+    internalReplyDelaySeconds: boundedInteger(
+      process.env.WATI_INTERNAL_REPLY_DELAY_SECONDS,
+      3,
+      10,
+    ),
+    fallbackMissThreshold: boundedInteger(
+      process.env.WATI_FALLBACK_MISS_THRESHOLD,
+      3,
+      10,
     ),
   };
 }
