@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { nextWhatsAppFlow, type FlowConversation } from "../lib/whatsapp/flow";
 import { nextMonthlyReset } from "../lib/whatsapp/fallback-circuit";
-import { outboundBodiesMatch } from "../lib/whatsapp/message-match";
+import {
+  collapseOutboundMirrors,
+  outboundBodiesMatch,
+} from "../lib/whatsapp/message-match";
 
 const conversation: FlowConversation = {
   id: "fallback-verification",
@@ -49,6 +52,27 @@ const localInteractiveBody = "Where are you in college? This helps us show the m
 const watiInteractiveBody = `A quick question\n${localInteractiveBody}\n\n1. 1st / 2nd year\n2. 3rd / Final year\n3. PG student`;
 assert.equal(outboundBodiesMatch(localInteractiveBody, watiInteractiveBody), true);
 assert.equal(outboundBodiesMatch(localInteractiveBody, "An unrelated operator reply"), false);
+
+const collapsed = collapseOutboundMirrors([
+  {
+    id: "callback",
+    direction: "outbound",
+    intent: "wati_operator",
+    status: "read",
+    body: watiInteractiveBody,
+    created_at: "2026-08-22T05:45:30.000Z",
+  },
+  {
+    id: "local",
+    direction: "outbound",
+    intent: "internal_fallback",
+    status: "sent",
+    body: localInteractiveBody,
+    created_at: "2026-08-22T05:45:29.489Z",
+  },
+]);
+assert.equal(collapsed.length, 1);
+assert.equal(collapsed[0].id, "callback");
 
 assert.equal(
   nextMonthlyReset(new Date("2026-08-22T10:00:00.000Z")),

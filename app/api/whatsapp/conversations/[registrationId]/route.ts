@@ -5,6 +5,7 @@ import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { cleanText } from "@/lib/validation";
 import { dispatchWhatsAppJob } from "@/lib/whatsapp/dispatch";
+import { collapseOutboundMirrors } from "@/lib/whatsapp/message-match";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -74,7 +75,7 @@ export async function GET(
   return NextResponse.json(
     {
       conversation: scoped.conversation,
-      messages: (messages ?? []).reverse(),
+      messages: collapseOutboundMirrors((messages ?? []).reverse()),
       sessionOpen: Boolean(
         scoped.conversation.conversation_window_expires_at &&
           Date.parse(scoped.conversation.conversation_window_expires_at) > Date.now(),

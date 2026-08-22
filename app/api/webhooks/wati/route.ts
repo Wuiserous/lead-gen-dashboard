@@ -212,7 +212,6 @@ async function syncOutboundMessage(
       .select("id,status,intent,body,template_name")
       .eq("conversation_id", conversation.id)
       .eq("direction", "outbound")
-      .is("wati_local_message_id", null)
       .is("whatsapp_message_id", null)
       .gte("created_at", new Date(occurredAtMs - 15 * 60_000).toISOString())
       .lte("created_at", new Date(occurredAtMs + 2 * 60_000).toISOString())
